@@ -35,13 +35,19 @@ class GraphLoaderSuite extends SparkFunSuite with LocalSparkContext {
       for (i <- (1 until 101)) writer.write(s"$i 0\n")
       writer.close()
       try {
-        val graph = GraphLoader.edgeListFile(sc, tmpDir.getAbsolutePath)
+        // val graph = GraphLoader.edgeListFile(sc, tmpDir.getAbsolutePath)
+        val startTime = System.currentTimeMillis()
+        val graph = GraphLoader.edgeListFile(sc, "/Users/XinhuiTian/Downloads/roadNet-CA.txt", numEdgePartitions = 10).edges.count()
+        val period = System.currentTimeMillis() - startTime
+        println("Loading Time: " + period)
+
+        /*
         val neighborAttrSums = graph.aggregateMessages[Int](
           ctx => ctx.sendToDst(ctx.srcAttr),
           _ + _)
-        assert(neighborAttrSums.collect.toSet === Set((0: VertexId, 100)))
+        assert(neighborAttrSums.collect.toSet === Set((0: VertexId, 100)))*/
       } finally {
-        Utils.deleteRecursively(tmpDir)
+        // Utils.deleteRecursively(tmpDir)
       }
     }
   }

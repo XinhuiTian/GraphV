@@ -405,6 +405,8 @@ class EdgePartition[
       if (edgeIsActive) {
         val srcAttr = if (tripletFields.useSrc) vertexAttrs(localSrcId) else null.asInstanceOf[VD]
         val dstAttr = if (tripletFields.useDst) vertexAttrs(localDstId) else null.asInstanceOf[VD]
+        // val srcAttr = vertexAttrs(localSrcId)
+        // val dstAttr = vertexAttrs(localDstId)
         ctx.set(srcId, dstId, localSrcId, localDstId, srcAttr, dstAttr, data(i))
         sendMsg(ctx)
       }

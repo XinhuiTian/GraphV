@@ -135,7 +135,9 @@ private[graphx] abstract class VertexPartitionBaseOps
 
       var i = self.mask.nextSetBit(0)
       while (i >= 0) {
+        // get all the values in otherV
         val otherV: Option[VD2] = if (other.mask.get(i)) Some(other.values(i)) else None
+        // for all the vertices that has been marked in this vertex partition,
         newValues(i) = f(self.index.getValue(i), self.values(i), otherV)
         i = self.mask.nextSetBit(i + 1)
       }

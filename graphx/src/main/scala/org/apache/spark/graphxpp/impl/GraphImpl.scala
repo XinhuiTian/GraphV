@@ -350,7 +350,7 @@ object GraphImpl {
     defaultVertexAttr: VD,
     edgeStorageLevel: StorageLevel,
     vertexStorageLevel: StorageLevel): GraphImpl[ED, VD] = {
-    GraphImpl.fromEdges(SimpleEdgePartition.fromEdges(edges),
+    GraphImpl.fromEdgesSimple(SimpleEdgePartition.fromEdges(edges),
       edges.getNumPartitions, defaultVertexAttr, edgeStorageLevel, vertexStorageLevel)
   }
 
@@ -358,7 +358,10 @@ object GraphImpl {
 
   // using a hash partitioner to distribute vertices
   def fromEdgesSimple[ED: ClassTag, VD: ClassTag]
-    (edges: RDD[(Int, SimpleEdgePartition[ED])], numPartitions: Int): Unit = {
+    (edges: RDD[(Int, SimpleEdgePartition[ED])],
+      numPartitions: Int, defaultVertexAttr: VD,
+      edgeStorageLevel: StorageLevel = StorageLevel.MEMORY_ONLY,
+      vertexStorageLevel: StorageLevel = StorageLevel.MEMORY_ONLY): GraphImpl[ED, VD] = {
     val vertexPartitioner = new HashPartitioner(numPartitions)
     // for each edge partition, get all the vertices in this partition
     // for each v in edgePart ep, v => (vpid, (v, pid))
@@ -417,260 +420,17 @@ object GraphImpl {
     }
 
     val finalEdgePartitions = edges.zipPartitions(masterWithMirrors) {
-      (edgePart, vertexPart) =>
-
+      (edgePartIter, vertexPartIter) =>
+        val (pid, edgePart) = edgePartIter.next()
+        val (_, vertexPart) = vertexPartIter.next()
+        val routingTable = vertexPart._1
+        val mirrors = vertexPart._2
+        Iterator((pid, finalEdgePartition(pid, numPartitions,
+          defaultVertexAttr, routingTable, mirrors, edgePart)))
     }
 
-
+    new GraphImpl(new EdgeRDDImpl(finalEdgePartitions))
   }
-
-  // TODO: currently use two repartition phases to compute the master position
-  def fromEdges[ED: ClassTag, VD: ClassTag](edges: RDD[(Int, SimpleEdgePartition[ED])],
-    numPartitions: Int, defaultVertexAttr: VD, edgeStorageLevel: StorageLevel,
-    vertexStorageLevel: StorageLevel): GraphImpl[ED, VD] = {
-    // 1. get vertices with partitionID, same as creating VertexRDD in GraphX
-    // TODO: any good optimization idea?
-    // val v2p = edges.flatMap(Function.tupled(this.edgePartitionToMsgs)).groupByKey
-    // val v2p = edges.mapPartitions(_.flatMap(Function.tupled(edgePartitionToMsgs))).groupByKey()
-    val vertexPartitioner = new HashPartitioner(numPartitions)
-    val v2p = edges.mapPartitions(_.flatMap(Function.tupled(edgePartitionToMsgs)))
-      .forcePartitionBy(vertexPartitioner).mapPartitions {
-      iter =>
-        partitionTableFromMsgs (numPartitions, iter)
-    }
-
-    // 2. get the master pid and mirror map
-    // (vid, pids) => (pid, (vid, pids)s )
-
-    // val routingTable = buildRoutingTables(numPartitions, v2p)
-
-    v2p.count()
-
-    /*
-    v2p.collect.foreach { part =>
-      println("PartitionID: " + part._1)
-      part._2._1 match {
-        case None => println
-        case _ => part._2._1.get.foreach{ a => a.toIterator.foreach(println); println }
-      }
-    } */
-
-    /* TODO: the structure is too complex, need to be simplified */
-    val routingTable = v2p.forcePartitionBy(vertexPartitioner).reduceByKey({
-      (v1, v2) =>
-        if (v1._1 != None) {
-          (v1._1, v1._2 ++ v2._2)
-        } else {
-          (v2._1, v1._2 ++ v2._2)
-        }
-    }, numPartitions)
-
-
-    /*
-    routingTable.collect.foreach { part =>
-      println("PartitionID: " + part._1)
-      part._2._1 match {
-        case None => println
-        case _ => part._2._1.get.foreach{ a => a.toIterator.foreach(println); println }
-      }
-    }
-
-    routingTable.collect.foreach { part =>
-      println("PartitionID: " + part._1)
-      part._2._1 match {
-        case None => println
-        case _ => part._2._2.foreach(println)
-      }
-      println
-    }
-    */
-    // routingTable.count()
-
-    // println("Mirror size")
-    // routingTable.foreach(part => println(part._2.mirrors.isEmpty))
-    // val mirrors = masters.flatMap(Function.tupled(this.setMirror)).groupByKey
-
-    // 4. now we get the masters and mirrors of each edgePartition
-    // begin to build the final edgePartition
-
-    val finalEdges = routingTable.zipPartitions(edges) {
-      (routingTableIter, edgeIter) =>
-      val (pid, rtPart) = routingTableIter.next()
-      val (_, edgePart) = edgeIter.next()
-      Iterator((pid, finalEdgePartition(pid,
-        numPartitions, defaultVertexAttr, rtPart._1.getOrElse(Array.empty), rtPart._2, edgePart)))
-    }
-
-    new GraphImpl(EdgeRDD.fromEdgePartitions(finalEdges))
-  }
-
-  /** Generate a `v2p` key-value array for each vertex referenced in `edgePartition`. '
-   *  return a iterator containing the partitions of all vertices
-   * */
-  def edgePartitionToMsgs(pid: Int, edgePartition: SimpleEdgePartition[_])
-  : Iterator[(VertexId, PartitionID)] = {
-    // Determine which positions each vertex id appears in using a map where the low 2 bits
-    // represent src and dst
-    // edgePartition.vertexIterator.map { vid => (vid, pid) }
-    val vertices = new OpenHashSet[VertexId]
-    edgePartition.edgeArray.foreach { e =>
-      vertices.add(e.srcId)
-      vertices.add(e.dstId)
-    }
-
-    vertices.iterator.map( vid => (vid, pid) )
-  }
-
-  def partitionTableFromMsgs(numPartitions: Int, iter: Iterator[(Long, Int)]):
-    Iterator[(PartitionID, (Option[Array[Array[VertexId]]], Array[(VertexId, PartitionID)]))] = {
-    val pid2vid = Array.fill(numPartitions)(new PrimitiveVector[VertexId])
-    val masters = new OpenHashSet[VertexId]
-    // val toMirrors = Array.fill(numPartitions)(new PrimitiveVector[VertexId])
-    // get the pid of this vertex partition
-    val vertexPartitioner = new HashPartitioner(numPartitions)
-
-      val first = iter.next ()
-      val masterPid = vertexPartitioner.getPartition (first._1)
-      // println("masterPid: " + masterPid)
-
-      // val srcFlags = Array.fill(numPartitions)(new PrimitiveVector[Boolean])
-      // val dstFlags = Array.fill(numPartitions)(new PrimitiveVector[Boolean])
-      for (msg <- iter) {
-        val vid = msg._1
-        val pid = msg._2
-        pid2vid (pid) += vid
-        masters.add (vid)
-      }
-      pid2vid (first._2) += first._1
-      masters.add (first._1)
-
-      val p2v = pid2vid.zipWithIndex.map {case (vids, pid) => vids.trim ().array}
-      // store all the masters of this edgePartition into the masterPid's value
-      p2v.update (masterPid, masters.iterator.toArray)
-      // val masterMsg = p2v(masterPid).map (vid => (vid, masterPid))
-
-      val partitionMsgs = Iterator.tabulate (numPartitions) {pid =>
-        // val masterMsg = p2v(pid).map(v => (v, masterPid))
-        if (pid == masterPid) {
-          // println("masterPid!")
-
-          (pid, (Some (p2v), Array.empty [(VertexId, PartitionID)]))
-        }
-        else {
-          // println("mirrorCase!")
-          val masterMsg = p2v (pid).map (v => (v, masterPid))
-          (pid, (None, masterMsg))
-        }
-      }
-      /*
-    partitionMsgs.foreach { part => println(part._1)
-      part._2._2.foreach(println)
-      println
-    } */
-      partitionMsgs
-  }
-
-
-  // select the master pid for each vertex, create the
-  def chooseMaster(repls: RDD[(VertexId, Iterable[PartitionID])])
-  : RDD[(PartitionID, MasterTriplet)] = {
-    /* by default, set the first pid as the master */
-
-    // TODO: need rules to decide the master positions
-    repls.flatMap {iter =>
-      val newIter = Random.shuffle(iter._2)
-      val masterPid = iter._2.head
-      val masterVid = iter._1
-      val mirrorPids = iter._2.tail
-      if (mirrorPids.isEmpty) {
-        // no mirrors, only one partition has this vertex
-        Iterator ((masterPid, MasterTriplet (masterVid, masterPid, None)))
-      } else {
-        val mirrors = mirrorPids.map (mirror =>
-          (mirror, MasterTriplet (masterVid, masterPid, None))).toSeq
-        mirrors ++ Seq ((masterPid, MasterTriplet (masterVid, masterPid, Some (mirrorPids))))
-          .toIterator
-      }
-    }
-  }
-
-  // for all the masters in one partition, get the mirrors for other partitions
-  def setMirror(pid: PartitionID, masterMap: Iterable[(VertexId, Iterable[PartitionID])]):
-  Iterable[(PartitionID, (VertexId, PartitionID))] = {
-    val mirrors = masterMap.map(iter => ((iter._1, pid), iter._2))
-       .filter(iter => !iter._2.isEmpty)
-       .flatMap(mirrorPids => mirrorPids._2.map(pid => (pid, mirrorPids._1)))
-    mirrors
-  }
-
-  // there are possibly partitions without mirrors, must maintain an empty position
-  // 1-5 modified: remove one phase of shuffle for mirror info construction
-  /*
-  def buildRoutingTables(numPartitions: Int, v2p: RDD[(VertexId, Iterable[PartitionID])]):
-    RDD[(Int, RoutingPartition)] = {
-    // 1. build masterTable: partitioned by partitionID
-    val vertexPartitions = this.chooseMaster(v2p).groupByKey.cache()
-
-    val masterAndMirrors = vertexPartitions.map { iter =>
-      val currentPid = iter._1
-      val vertices = iter._2
-      (currentPid, (
-        // masters
-        vertices.filter( v => v.master == currentPid).map { t =>
-        if (t.mirrors == None) (t.vid, Iterable.empty) else (t.vid, t.mirrors.get)},
-        // mirrors
-        vertices.filter(v => v.master != currentPid).map(t => (t.vid, t.master)))
-      )
-    }
-
-    // masters
-
-    // mirrors may have empty element
-    /*
-    val mirrors = vertexPartitions.map { iter =>
-      val currentPid = iter._1
-      val vertices = iter._2
-      (currentPid, vertices.filter(v => v.master != currentPid).map(t => (t.vid, t.master)))
-    } */
-
-    // mirrors
-
-    /*
-    val mirrors = masters.flatMap{ part =>
-      val pid2mirrors = Array.fill(numPartitions)(new PrimitiveVector[(VertexId, PartitionID)])
-      part._2.map(iter => ((iter._1, part._1), iter._2))
-        .foreach { master =>
-          val mirrorPids = master._2
-          for (pid <- mirrorPids) {
-            val masterPid = master._1
-            pid2mirrors(pid) += masterPid
-          }
-        }
-      val mirrors = Iterator.tabulate(numPartitions) { pid =>
-        (pid, pid2mirrors(pid).toArray)
-      }
-
-
-      mirrors
-    }
-    */
-
-    // val finalMirrors = mirrors.reduceByKey((part1, part2) => part1 ++ part2)
-
-    /*
-    val routingTables = masters.zipPartitions(mirrors) {
-      (masterIter, mirrorIter) =>
-        val (pid, masterPart) = masterIter.next()
-        val (_, mirrorPart) = mirrorIter.next()
-        Iterator((pid, new RoutingPartition(masterPart, mirrorPart)))
-    }
-    */
-    val routingTables = masterAndMirrors.map {part =>
-      (part._1, new RoutingPartition(part._2._1, part._2._2)
-    )}
-    routingTables
-  }
-  */
 
   def finalEdgePartition[ED: ClassTag, VD: ClassTag](pid: PartitionID,
     numParts: Int,
