@@ -1,7 +1,7 @@
 
 package org.apache.spark.graphxpp.impl
 
-import org.apache.spark.graphxp._
+import org.apache.spark.graphxpp._
 import org.apache.spark.util.collection.PrimitiveVector
 
 import scala.collection.mutable.ArrayBuffer

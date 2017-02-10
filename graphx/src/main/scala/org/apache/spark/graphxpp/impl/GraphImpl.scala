@@ -18,8 +18,8 @@
 package org.apache.spark.graphxpp.impl
 
 import org.apache.spark.graphxpp.PartitionStrategy
-import org.apache.spark.graphxp.util.collection.GraphXPrimitiveKeyOpenHashMap
 import org.apache.spark.graphxpp.impl.GraphImpl.MasterPositions
+import org.apache.spark.graphxpp.utils.collection.GraphXPrimitiveKeyOpenHashMap
 import org.apache.spark.util.collection.{BitSet, OpenHashMap, OpenHashSet, PrimitiveVector}
 import org.apache.spark.{HashPartitioner, graphxpp}
 import org.apache.spark.graphxpp._
@@ -37,7 +37,8 @@ class SimpleEdgePartition[ED: ClassTag]
 (val edges: Iterator[Edge[ED]]) {
   // val vertexIterator = edges.flatMap(e => e.srcId :: e.dstId :: Nil)
   val edgeArray = edges.toArray
-  def vertexIterator: Iterator[VertexId] = edges.flatMap(e => e.srcId :: e.dstId :: Nil)
+  // def vertexIterator: Iterator[VertexId] = edges.flatMap(e => e.srcId :: e.dstId :: Nil)
+
 }
 
 object SimpleEdgePartition {
@@ -356,6 +357,20 @@ object GraphImpl {
 
   type MasterPositions = (VertexId, Iterable[PartitionID])
 
+  def edgePartitionToMsgs(pid: Int, edgePartition: SimpleEdgePartition[_])
+  : Iterator[(VertexId, PartitionID)] = {
+    // Determine which positions each vertex id appears in using a map where the low 2 bits
+    // represent src and dst
+    // edgePartition.vertexIterator.map { vid => (vid, pid) }
+    val vertices = new OpenHashSet[VertexId]
+    edgePartition.edgeArray.foreach { e =>
+      vertices.add(e.srcId)
+      vertices.add(e.dstId)
+    }
+
+    vertices.iterator.map( vid => (vid, pid) )
+  }
+
   // using a hash partitioner to distribute vertices
   def fromEdgesSimple[ED: ClassTag, VD: ClassTag]
     (edges: RDD[(Int, SimpleEdgePartition[ED])],
@@ -368,11 +383,10 @@ object GraphImpl {
     // repartition v2p, in each vertex partition,
     // we have all the epids for each vertex
     // construct vertex array for each epid
-    val v2p = edges.mapPartitions(_.flatMap{ part =>
-      val pid = part._1
-      // vertexId + edgePartitionID + vertexPartitionID
-      part._2.vertexIterator.map(vid => (vid, pid))
-    }).forcePartitionBy(vertexPartitioner)
+    val v2p = edges.mapPartitions(_.flatMap(Function.tupled(edgePartitionToMsgs))).forcePartitionBy(vertexPartitioner)
+    v2p.count
+
+    // v2p.foreach(println)
     // get all the masters
     val routingTable = v2p.mapPartitionsWithIndex { (vpid, iter) =>
       val pid2vid = Array.fill(numPartitions)(new PrimitiveVector[VertexId])
@@ -389,6 +403,14 @@ object GraphImpl {
       val p2v = pid2vid.map { vids => vids.trim ().array}
       p2v.update (masterPid, masters.iterator.toArray)
       Iterator((vpid, p2v))
+    }
+
+    routingTable.count()
+
+    routingTable.foreach { iter =>
+      println("partitionID: " + iter._1)
+      iter._2.foreach{ vids => vids.foreach{ vid => print(vid + " ") }; println}
+      println
     }
 
     // determine the mirrors for each edge partition
@@ -483,7 +505,8 @@ object GraphImpl {
 
     // mirrors.foreach(v => localMirrors(global2local(v._1)))
 
-    mirrors.foreach { v => localMirrors((global2local(v._1)) - mastersRouteTable(pid).length) = v._2 }
+    mirrors.foreach { v =>
+      localMirrors((global2local(v._1)) - mastersRouteTable(pid).length) = v._2 }
 
     mastersRouteTable.update(pid, Array.empty)
 

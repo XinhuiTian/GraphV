@@ -6,6 +6,7 @@ import java.nio.charset.StandardCharsets
 
 import org.apache.spark.SparkFunSuite
 import org.apache.spark.graphx.LocalSparkContext
+import org.apache.spark.graphxpp.GraphLoader
 import org.apache.spark.util.Utils
 
 /**

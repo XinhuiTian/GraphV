@@ -24,7 +24,7 @@ import scala.collection.immutable.IndexedSeq
 import scala.reflect.ClassTag
 
 import org.apache.spark.graphx.PartitionStrategy
-import org.apache.spark.graphxp.util.collection.GraphXPrimitiveKeyOpenHashMap
+import org.apache.spark.graphxpp.utils.collection.GraphXPrimitiveKeyOpenHashMap
 import org.apache.spark.util.collection.{BitSet, PrimitiveVector}
 import org.apache.spark.{HashPartitioner, graphxpp}
 import org.apache.spark.graphxpp._

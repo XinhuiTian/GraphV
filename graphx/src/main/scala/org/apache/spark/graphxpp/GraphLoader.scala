@@ -77,10 +77,11 @@ object GraphLoader extends Logging {
 
     // edges.foreach(println)
     // edges.foreach(part => part._2.edgeArray.foreach(println))
+    // edges.foreach(part => part._2..foreach(println))
 
     println("It took %d ms to load the edges".format(System.currentTimeMillis - startTime))
 
-    GraphImpl.fromEdges(edges, numEdgePartitions, defaultVertexAttr = 1, edgeStorageLevel,
+    GraphImpl.fromEdgesSimple(edges, numEdgePartitions, defaultVertexAttr = 1, edgeStorageLevel,
                                     vertexStorageLevel)
   }
 
