@@ -62,6 +62,7 @@ class ReplicatedVertexView[VD: ClassTag, ED: ClassTag](
     val shipSrc = includeSrc && !hasSrcId
     val shipDst = includeDst && !hasDstId
     if (shipSrc || shipDst) {
+      println("upgrade")
       val shippedVerts: RDD[(Int, VertexAttributeBlock[VD])] =
         vertices.shipVertexAttributes(shipSrc, shipDst)
           .setName("ReplicatedVertexView.upgrade(%s, %s) - shippedVerts %s %s (broadcast)".format(

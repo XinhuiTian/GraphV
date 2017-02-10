@@ -539,6 +539,11 @@ class PairRDDFunctions[K, V](self: RDD[(K, V)])
     }
   }
 
+  // added by txh: force partitionBy, even the partitioner is same as this RDD
+  def forcePartitionBy(partitioner: Partitioner): RDD[(K, V)] = self.withScope {
+    new ShuffledRDD[K, V, V](self, partitioner)
+  }
+
   /**
    * Return an RDD containing all pairs of elements with matching keys in `this` and `other`. Each
    * pair of elements will be returned as a (k, (v1, v2)) tuple, where (k, v1) is in `this` and

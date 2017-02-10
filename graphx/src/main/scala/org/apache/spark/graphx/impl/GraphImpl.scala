@@ -250,6 +250,7 @@ class GraphImpl[VD: ClassTag, ED: ClassTag] protected (
     // The implicit parameter eq will be populated by the compiler if VD and VD2 are equal, and left
     // null if not
     if (eq != null) {
+      println("VD == VD2")
       vertices.cache()
       // updateF preserves type, so we can use incremental replication
       val newVerts = vertices.leftJoin(other)(updateF).cache()

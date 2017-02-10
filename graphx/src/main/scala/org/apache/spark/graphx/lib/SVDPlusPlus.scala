@@ -99,9 +99,12 @@ object SVDPlusPlus {
           (Array[Double], Array[Double], Double, Double),
           Double,
           (Array[Double], Array[Double], Double)]) {
+      // user: srcAttr, item: dstAttr
       val (usr, itm) = (ctx.srcAttr, ctx.dstAttr)
+      // p and q are stored in the first double array
       val (p, q) = (usr._1, itm._1)
       val rank = p.length
+      // pred = u + bu + bi + yu * q'
       var pred = u + usr._3 + itm._3 + blas.ddot(rank, q, 1, usr._2, 1)
       pred = math.max(pred, conf.minVal)
       pred = math.min(pred, conf.maxVal)
