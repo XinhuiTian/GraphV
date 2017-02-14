@@ -75,13 +75,11 @@ class VertexAttrBlock[A: ClassTag](val msgs: Iterator[(VertexId, A)]) extends Se
     new VertexAttrBlock(vertexMap.toIterator)
   }
 
-
   override def clone(): VertexAttrBlock[A] = {
     // val newMsgs = new PrimitiveVector[(VertexId, A)]
     val newMsgs = msgs.toArray.clone()
     new VertexAttrBlock(newMsgs.iterator)
   }
-
 }
 
 case class MasterTriplet(vid: VertexId, master: PartitionID,
@@ -116,7 +114,6 @@ class GraphImpl[ED: ClassTag, VD: ClassTag](@transient var edges: EdgeRDDImpl[ED
     }
     new GraphImpl(newEdges)
   }
-
 
   // TODO: upgrade should only ship vertices that have not been sync
   override def upgrade = {
@@ -383,8 +380,9 @@ object GraphImpl {
     // repartition v2p, in each vertex partition,
     // we have all the epids for each vertex
     // construct vertex array for each epid
-    val v2p = edges.mapPartitions(_.flatMap(Function.tupled(edgePartitionToMsgs))).forcePartitionBy(vertexPartitioner)
-    v2p.count
+    val v2p = edges.mapPartitions(_.flatMap(Function.tupled(edgePartitionToMsgs)))
+      .forcePartitionBy(vertexPartitioner)
+    // v2p.count
 
     // v2p.foreach(println)
     // get all the masters
@@ -403,15 +401,17 @@ object GraphImpl {
       val p2v = pid2vid.map { vids => vids.trim ().array}
       p2v.update (masterPid, masters.iterator.toArray)
       Iterator((vpid, p2v))
-    }
+    }.cache()
 
-    routingTable.count()
+    // routingTable.count()
 
+    /*
     routingTable.foreach { iter =>
       println("partitionID: " + iter._1)
       iter._2.foreach{ vids => vids.foreach{ vid => print(vid + " ") }; println}
       println
     }
+    */
 
     // determine the mirrors for each edge partition
     val mirrorsPerPart = routingTable.mapPartitionsWithIndex{ (masterPid, iter) =>
@@ -440,6 +440,7 @@ object GraphImpl {
       (tablePart, mirrorsPart) =>
         tablePart.map(table => (table._1, (table._2, mirrorsPart.flatMap(_._2).toArray)))
     }
+    masterWithMirrors.count()
 
     val finalEdgePartitions = edges.zipPartitions(masterWithMirrors) {
       (edgePartIter, vertexPartIter) =>
@@ -567,8 +568,9 @@ object GraphImpl {
     masterMask.setUntil(masterSize)
 
     new EdgePartition(localSrcIds, localDstIds, data,
-        index, localMasters, localMirrors, global2local,
-        local2global.trim().array,  vertexAttrs.slice(0, masterSize),
+        index, localMasters, localMirrors,
+        global2local, local2global.trim().array,
+        vertexAttrs.slice(0, masterSize),
         vertexAttrs.slice(masterSize, currLocalId + 1), masterMask, numParts, None)
   }
 }
