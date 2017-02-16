@@ -17,6 +17,7 @@
 
 package org.apache.spark.graphx.lib
 
+// scalastyle:off println
 import scala.reflect.ClassTag
 
 import breeze.linalg.{Vector => BV}
@@ -349,6 +350,8 @@ object PageRank extends Logging {
         vertexProgram(id, attr, msgSum)
     }
 
+    // scalastyle:off println
+    println("Begin Pregel")
     Pregel(pagerankGraph, initialMessage, activeDirection = EdgeDirection.Out)(
       vp, sendMessage, messageCombiner)
       .mapVertices((vid, attr) => attr._1)

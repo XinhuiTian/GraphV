@@ -17,17 +17,16 @@
 
 package org.apache.spark.graphxpp.impl
 
-// // scalastyle:off println
-import org.apache.spark.graphxpp.EdgeActiveness.EdgeActiveness
-
+// scalastyle:off println
 import scala.collection.immutable.IndexedSeq
 import scala.reflect.ClassTag
 
 import org.apache.spark.graphx.PartitionStrategy
 import org.apache.spark.graphxpp.utils.collection.GraphXPrimitiveKeyOpenHashMap
 import org.apache.spark.util.collection.{BitSet, PrimitiveVector}
-import org.apache.spark.{HashPartitioner, graphxpp}
+import org.apache.spark.HashPartitioner
 import org.apache.spark.graphxpp._
+import org.apache.spark.graphxpp.EdgeActiveness.EdgeActiveness
 import org.apache.spark.rdd.RDD
 import org.apache.spark.storage.StorageLevel
 
@@ -83,16 +82,18 @@ class EdgePartition[
 
   def mastersSize: Int = vertexSize - mirrors.length
 
-  def getMasters: Array[VertexId] = local2global.slice(0, mastersSize)
+  def getMasters: Array[VertexId] = local2global.slice (0, mastersSize)
 
-  def getMirrors: Array[VertexId] = local2global.slice(mastersSize, vertexSize)
+  def getMirrors: Array[VertexId] = local2global.slice (mastersSize, vertexSize)
+
+  def getMask: BitSet = masterMask
 
   def getMastersWithAttr: IndexedSeq[(VertexId, VD)] = {
-    (0 until mastersSize).map(i => (local2global(i), masterAttrs(i)))
+    (0 until mastersSize).map (i => (local2global (i), masterAttrs (i)))
   }
 
   def getMirrorsWithAttr: IndexedSeq[(VertexId, VD)] = {
-    (0 until mirrors.size).map(i => (local2global(i + mastersSize), mirrorAttrs(i)))
+    (0 until mirrors.size).map (i => (local2global (i + mastersSize), mirrorAttrs (i)))
   }
 
   def getLocalMastersWithAttr: Array[VD] = masterAttrs
@@ -106,6 +107,7 @@ class EdgePartition[
       mirrorAttrs (index - mastersSize)
     }
   }
+
   // def getMirrors: Array[(VertexId, PartitionID)] = mirrors
 
   def getLocal2Global: Array[VertexId] = local2global
@@ -121,9 +123,9 @@ class EdgePartition[
     def hasNext(): Boolean = pos < localSrcIds.length
 
     def next(): Edge[ED] = {
-      edge.srcId = local2global(localSrcIds(pos))
-      edge.dstId = local2global(localDstIds(pos))
-      edge.attr = data(pos)
+      edge.srcId = local2global (localSrcIds (pos))
+      edge.dstId = local2global (localDstIds (pos))
+      edge.attr = data (pos)
       pos += 1
       edge
     }
@@ -138,17 +140,17 @@ class EdgePartition[
 
     override def next(): EdgeTriplet[ED, VD] = {
       val triplet = new EdgeTriplet[ED, VD]
-      val localSrcId = localSrcIds(pos)
-      val localDstId = localDstIds(pos)
-      triplet.srcId = local2global(localSrcId)
-      triplet.dstId = local2global(localDstId)
+      val localSrcId = localSrcIds (pos)
+      val localDstId = localDstIds (pos)
+      triplet.srcId = local2global (localSrcId)
+      triplet.dstId = local2global (localDstId)
       if (includeSrc) {
-        triplet.srcAttr = vertexAttr(localSrcId)
+        triplet.srcAttr = vertexAttr (localSrcId)
       }
       if (includeDst) {
-        triplet.dstAttr = vertexAttr(localDstId)
+        triplet.dstAttr = vertexAttr (localDstId)
       }
-      triplet.attr = data(pos)
+      triplet.attr = data (pos)
       pos += 1
       triplet
     }
@@ -158,40 +160,23 @@ class EdgePartition[
     activeSet match {
       case None => false
       case _ =>
-        activeSet.get.contains(vid)
+        activeSet.get.contains (vid)
     }
 
   }
 
-  // local edge level operation
-  // input: get all the masters that have changed the attrs
-  // output: all the masters in this partition attrs have been changed
-  // 1.18: add the master mask, need to change the edgePartition structure?
-  def diff(otherAttrs: Array[VD]): EdgePartition[ED, VD] = {
-    val newMask = this.masterMask
-    var i = newMask.nextSetBit(0)
-    while (i >= 0) {
-      if (masterAttrs(i) == otherAttrs(i)) {
-        newMask.unset(i)
-      }
-      i = newMask.nextSetBit(i + 1)
-    }
-    this.withMasterAttrs(otherAttrs).withMask(newMask)
-  }
 
   // only used when the updated msg has the same type with current partition
   def updateVertices(iter: Iterator[(VertexId, VD)]): EdgePartition[ED, VD] = {
     val newMirrorAttrs = new Array[VD](mirrors.size)
-    System.arraycopy(mirrorAttrs, 0, newMirrorAttrs, 0, mirrorAttrs.length)
+    System.arraycopy (mirrorAttrs, 0, newMirrorAttrs, 0, mirrorAttrs.length)
 
     while (iter.hasNext) {
-      val kv = iter.next()
-      newMirrorAttrs(global2local(kv._1) - mastersSize) = kv._2
+      val kv = iter.next ()
+      newMirrorAttrs (global2local (kv._1) - mastersSize) = kv._2
     }
 
-    new EdgePartition(localSrcIds, localDstIds, data, index, masters, mirrors,
-                       global2local, local2global, masterAttrs, newMirrorAttrs,
-                      masterMask, numPartitions, activeSet)
+    this.withMirrorAttrs (newMirrorAttrs)
   }
 
   def map[ED2: ClassTag](iter: Iterator[ED2]): EdgePartition[ED2, VD] = {
@@ -199,46 +184,46 @@ class EdgePartition[
     val newData = new Array[ED2](data.length)
     var i = 0
     while (iter.hasNext) {
-      newData(i) = iter.next()
+      newData (i) = iter.next ()
       i += 1
     }
-    assert(newData.length == i)
-    this.withData(newData)
+    assert (newData.length == i)
+    this.withData (newData)
   }
 
   // TODO: use mask to accelerate
   def mapVertices[VD2: ClassTag](f: (VertexId, VD) => VD2):
-    EdgePartition[ED, VD2] = {
+  EdgePartition[ED, VD2] = {
     // val masterSize = mastersSize
     val newMasterAttrs = new Array[VD2](mastersSize)
     for (i <- 0 until mastersSize)
-      newMasterAttrs(i) = f(local2global(i), masterAttrs(i))
+      newMasterAttrs (i) = f (local2global (i), masterAttrs (i))
 
-    this.withMasterAttrs(newMasterAttrs)
+    this.withMasterAttrs (newMasterAttrs)
   }
 
   // TODO: whether use a bitmask or not?
   def leftJoin[A: ClassTag, VD2: ClassTag](other: VertexAttrBlock[A], withActives: Boolean = true)
     (f: (VertexId, VD, Option[A]) => VD2): EdgePartition[ED, VD2] = {
-    val otherValues = Array.fill[Option[A]](mastersSize)(None)
+    val otherValues = Array.fill [Option[A]](mastersSize)(None)
     val newValues = new Array[VD2](mastersSize)
     val activeVertices = new PrimitiveVector[VertexId]
     // println("EdgePartition.leftJoin")
     // other.msgs.foreach(println)
 
-    val otherMsgs = other.clone()
+    val otherMsgs = other.clone ()
     // otherMsgs.msgs.foreach(println)
-    otherMsgs.msgs.foreach{ v =>
-      val localVid = global2local(v._1)
+    otherMsgs.msgs.foreach {v =>
+      val localVid = global2local (v._1)
       // println(v + " " + globalVid)
-      otherValues.update(localVid, Some(v._2))
+      otherValues.update (localVid, Some (v._2))
       activeVertices += v._1
     }
     // otherValues.foreach(println)
     // System.arraycopy(masterAttrs, 0, newValues, 0, mastersSize)
     // TODO: currently must compare all masters
     for (i <- 0 until mastersSize) {
-      newValues(i) = f(local2global(i), masterAttrs(i), otherValues(i))
+      newValues (i) = f (local2global (i), masterAttrs (i), otherValues (i))
     }
     // println("leftJoin")
 
@@ -253,68 +238,52 @@ class EdgePartition[
 
   // change attrs of local masters, get the msg for other partitions
   def shipMasterVertexAttrs: Iterator[(PartitionID, ShippedMsg[VD])] = {
-    Iterator.tabulate(numPartitions) { pid =>
+    Iterator.tabulate (numPartitions) {pid =>
       val initialSize = 64
       val vids = new PrimitiveVector[VertexId](initialSize)
       val attrs = new PrimitiveVector[VD](initialSize)
-      var i = 0
-      masters(pid).foreach { vid =>
-          if (masterMask.get(vid)) {
-            vids += local2global (vid)
-            attrs += masterAttrs (vid)
-          }
-        i += 1
+      masters (pid).foreach {vid =>
+        if (masterMask.get (vid)) {
+          vids += local2global (vid)
+          attrs += masterAttrs (vid)
+        }
       }
-      (pid, new ShippedMsg(vids.trim().array, attrs.trim().array))
+      (pid, new ShippedMsg (vids.trim ().array, attrs.trim ().array))
+    }
+  }
+
+  def shipAttrsWithMask(mask: BitSet): Iterator[(PartitionID, ShippedMsg[VD])] = {
+    Iterator.tabulate (numPartitions) {pid =>
+      val initialSize = 64
+      val vids = new PrimitiveVector[VertexId](initialSize)
+      val attrs = new PrimitiveVector[VD](initialSize)
+      masters (pid).foreach {vid =>
+        if (mask.get (vid)) {
+          vids += local2global (vid)
+          attrs += masterAttrs (vid)
+        }
+      }
+      (pid, new ShippedMsg (vids.trim ().array, attrs.trim ().array))
     }
   }
 
   // use a msgs collection, ship all master msgs to the mirrors
-  def shipVertexAttrs(msgs: Iterator[(Int, VD)]):
-    Iterator[(PartitionID, Iterator[(VertexId, VD)])] = {
-
-    /*
-    val vids = Array.fill(numParts)(new PrimitiveVector[VertexId])
-    val attrs = Array.fill(numParts)(new PrimitiveVector[VD2])
-
-    for (msg <- msgs) {
-      val vid = msg._1
-      val attr = msg._2
-
-      for (pid <- masters(vid)) {
-        vids(pid) += local2global(vid)
-        attrs(pid) += attr
-      }
-    }
-
-    Iterator.tabulate(numParts) { pid =>
-      (pid, new ShippedMsg(vids(pid).toArray, attrs(pid).toArray))
-    }
-
-
-    val remoteMsgs = Array.fill(numParts)(new PrimitiveVector[(VertexId, VD)])
-
-    for (msg <- msgs) {
-      val vid = msg._1
-      val attr = msg._2
-
-      for (pid <- masters(vid)) {
-        remoteMsgs(pid) += (local2global(vid), attr)
-      }
-    } */
-
-
-    Iterator.tabulate(numPartitions) { pid =>
-      val routingTable = masters(pid)
+  /*
+  def shipVertexAttrs(msg: LocalMastersWithMask):
+  Iterator[(PartitionID, Iterator[(VertexId, VD)])] = {
+    val newValues = msg.attrs
+    val shipMask = msg.mask
+    Iterator.tabulate (numPartitions) {pid =>
+      val routingTable = masters (pid)
       val attrs = new PrimitiveVector[(VertexId, VD)](mastersSize)
-      for (attr <- msgs) {
-        if (routingTable.contains(attr._1)) {
-          attrs += (local2global(attr._1), attr._2)
+      for (attr <- msg.attrs) {
+        if (routingTable.contains (attr._1)) {
+          attrs +=(local2global (attr._1), attr._2)
         }
       }
-      (pid, attrs.trim().iterator)
+      (pid, attrs.trim ().iterator)
     }
-  }
+  } */
 
   /*
   def syncMirrors(msgs: Iterator[(VertexId, VD)]): EdgePartition[ED, VD] = {
@@ -331,25 +300,12 @@ class EdgePartition[
   }
   */
 
-  def syncMirrors(msgs: Iterator[(VertexId, VD)]): EdgePartition[ED, VD] = {
-    // compute the size of mirrors
-    val mirrorSize = mirrors.length
-    val newMirrorAttrs = new Array[VD](mirrorSize)
-
-    while (msgs.hasNext) {
-      val kv = msgs.next()
-      newMirrorAttrs(global2local(kv._1) - mastersSize) = kv._2
-    }
-    // this
-    this.withMirrorAttrs(newMirrorAttrs)
-  }
-
   def shipActiveSet: Iterator[(PartitionID, Iterator[VertexId])] = {
     if (activeSet == None) {
       Iterator.empty
     } else {
       val shippedMsgs = Array
-        .fill[PrimitiveVector[VertexId]](numPartitions)(new PrimitiveVector[VertexId])
+        .fill [PrimitiveVector[VertexId]](numPartitions)(new PrimitiveVector[VertexId])
 
       /*
       val vids = activeSet.get.iterator.foreach { vid =>
@@ -365,13 +321,13 @@ class EdgePartition[
       // activeSet.get.iterator.foreach(println)
 
 
-      Iterator.tabulate(numPartitions) { pid =>
+      Iterator.tabulate (numPartitions) {pid =>
         val activeVids = new PrimitiveVector[VertexId]
         val actives = activeSet.get.iterator
         for (vid <- actives) {
           // println("active: " + global2local(vid))
           // masters(pid).foreach(println)
-          if (masters(pid).contains(global2local(vid))) {
+          if (masters (pid).contains (global2local (vid))) {
             activeVids += vid
           }
         }
@@ -379,13 +335,14 @@ class EdgePartition[
       }
     }
   }
+
   def syncActiveSet(msgs: Iterator[VertexId]): EdgePartition[ED, VD] = {
     val allActiveVertices = activeSet match {
       case None => msgs
       case _ => activeSet.get.iterator ++ msgs
     }
 
-    this.withActiveSet(allActiveVertices)
+    this.withActiveSet (allActiveVertices)
   }
 
   // separate local master msgs and mirror msgs
@@ -394,17 +351,17 @@ class EdgePartition[
     val outMirrors = new PrimitiveVector[VertexId]
     val outMsgs = new PrimitiveVector[A]
 
-    val localAggres = localAgg.toArray.clone()
+    val localAggres = localAgg.toArray.clone ()
     val localMsgs = localAggres
-      .filter(agg => agg._1 < mastersSize)
-      .map(agg => (local2global(agg._1), agg._2)).toIterator
+      .filter (agg => agg._1 < mastersSize)
+      .map (agg => (local2global (agg._1), agg._2)).toIterator
 
 
     for (agg <- localAggres) yield {
       if (agg._1 >= mastersSize) {
-        val globalMirror = local2global(agg._1)
+        val globalMirror = local2global (agg._1)
         outMirrors += globalMirror
-        partIds += mirrors(agg._1 - mastersSize)
+        partIds += mirrors (agg._1 - mastersSize)
         outMsgs += agg._2
       }
     }
@@ -413,29 +370,20 @@ class EdgePartition[
       outMirrors += local2global(agg._1)
       partIds += mirrors(agg._1 - mastersSize)
       outMsgs += agg._2
-    }*/
+    } */
 
     val remoteSize = partIds.length
 
-    val remoteMsgs = Iterator.tabulate(remoteSize) { pid =>
-      (partIds(pid), (outMirrors(pid), outMsgs(pid)))
+    val remoteMsgs = Iterator.tabulate (remoteSize) {pid =>
+      (partIds (pid), (outMirrors (pid), outMsgs (pid)))
     }
-        // .map(agg => (agg._1.toLong, agg._2))
+    // .map(agg => (agg._1.toLong, agg._2))
 
     // AllMsgs(localMsgs, remoteMsgs)
 
     // localAgg.filter()
-    AllMsgs(localMsgs, remoteMsgs)
+    AllMsgs (localMsgs, remoteMsgs)
   }
-
-  /*
-  def aggregateMsgsForVertices[VD2: ClassTag](
-    iter: Iterator[Product2[VertexId, VD2]],
-    reduceFunc: (VD2, VD2) => VD2): Iterator[(VertexId, VD2)] = {
-    val newMasterValues = new Array[VD2](mastersSize)
-    val newMirrorValues = new Array[VD2](mirrors.size)
-  }
-  */
 
   def aggregateMessagesEdgeScan[A: ClassTag](
     sendMsg: EdgeContext[VD, ED, A] => Unit,
@@ -444,37 +392,38 @@ class EdgePartition[
     activeness: EdgeActiveness
   ): Iterator[(Int, A)] = {
     val aggregates = new Array[A](local2global.size)
-    val bitset = new BitSet(local2global.size)
+    val bitset = new BitSet (local2global.size)
 
     val ctx = new AggregatingEdgeContext[VD, ED, A](mergeMsg, aggregates, bitset)
     var i = 0
     // for all edges
     // try to use local vid for aggregation?
     while (i < localDstIds.size) {
-      val localSrcId = localSrcIds(i)
-      val srcId = local2global(localSrcId)
-      val localDstId = localDstIds(i)
-      val dstId = local2global(localDstId)
-      // println("srcId " + srcId + " " + isActive(srcId) + " dstId " + dstId + " " + isActive(dstId))
+      val localSrcId = localSrcIds (i)
+      val srcId = local2global (localSrcId)
+      val localDstId = localDstIds (i)
+      val dstId = local2global (localDstId)
+      // println("srcId " + srcId + " " +
+      // isActive(srcId) + " dstId " + dstId + " " + isActive(dstId))
       val edgeIsActive =
         if (activeness == EdgeActiveness.Neither) true
-        else if (activeness == EdgeActiveness.SrcOnly) isActive(srcId)
-        else if (activeness == EdgeActiveness.DstOnly) isActive(dstId)
-        else if (activeness == EdgeActiveness.Both) isActive(srcId) && isActive(dstId)
-        else if (activeness == EdgeActiveness.Either) isActive(srcId) || isActive(dstId)
-        else throw new Exception("unreachable")
+        else if (activeness == EdgeActiveness.SrcOnly) isActive (srcId)
+        else if (activeness == EdgeActiveness.DstOnly) isActive (dstId)
+        else if (activeness == EdgeActiveness.Both) isActive (srcId) && isActive (dstId)
+        else if (activeness == EdgeActiveness.Either) isActive (srcId) || isActive (dstId)
+        else throw new Exception ("unreachable")
 
       if (edgeIsActive) {
         // println("edgeIsActive")
-        val srcAttr = if (tripletFields.useSrc) vertexAttr(localSrcId) else null.asInstanceOf[VD]
-        val dstAttr = if (tripletFields.useDst) vertexAttr(localDstId) else null.asInstanceOf[VD]
-        ctx.set(srcId, dstId, localSrcId, localDstId, srcAttr, dstAttr, data(i))
+        val srcAttr = if (tripletFields.useSrc) vertexAttr (localSrcId) else null.asInstanceOf [VD]
+        val dstAttr = if (tripletFields.useDst) vertexAttr (localDstId) else null.asInstanceOf [VD]
+        ctx.set (srcId, dstId, localSrcId, localDstId, srcAttr, dstAttr, data (i))
         // println(ctx.toEdgeTriplet)
-        sendMsg(ctx)
+        sendMsg (ctx)
       }
       i += 1
     }
-    bitset.iterator.map { localId => (localId, aggregates(localId)) }
+    bitset.iterator.map {localId => (localId, aggregates (localId))}
   }
 
   /** Return a new `EdgePartition` with the specified active set, provided as an iterator. */
@@ -482,11 +431,13 @@ class EdgePartition[
     val activeSet = new VertexSet
     // println("WithActiveSet: ")
     // iter.foreach(println)
-    while (iter.hasNext) { // println("adding to activeSet")
-      activeSet.add(iter.next()) }
-    new EdgePartition(localSrcIds, localDstIds, data, index, masters, mirrors,
-                       global2local, local2global, masterAttrs, mirrorAttrs,
-                      masterMask, numPartitions, Some(activeSet))
+    while (iter.hasNext) {
+      // println("adding to activeSet")
+      activeSet.add (iter.next ())
+    }
+    new EdgePartition (localSrcIds, localDstIds, data, index, masters, mirrors,
+      global2local, local2global, masterAttrs, mirrorAttrs,
+      masterMask, numPartitions, Some (activeSet))
   }
 
   def withMasterAttrs[VD2: ClassTag](newMasterAttrs: Array[VD2]): EdgePartition[ED, VD2] = {
@@ -500,30 +451,51 @@ class EdgePartition[
     }
     else {
     */
-      // println("Not eq")
-    new EdgePartition(localSrcIds, localDstIds, data, index, masters, mirrors,
-                         global2local, local2global, newMasterAttrs, new Array[VD2](mirrors.size),
-                      masterMask, numPartitions, activeSet)
+    // println("Not eq")
+    new EdgePartition (localSrcIds, localDstIds, data, index, masters, mirrors,
+      global2local, local2global, newMasterAttrs, new Array[VD2](mirrors.size),
+      masterMask, numPartitions, activeSet)
     // }
   }
 
   def withMirrorAttrs(newMirrorAttrs: Array[VD]): EdgePartition[ED, VD] = {
-    new EdgePartition(localSrcIds, localDstIds, data, index, masters, mirrors,
-                       global2local, local2global, masterAttrs, newMirrorAttrs,
-                      masterMask, numPartitions, activeSet)
+    new EdgePartition (localSrcIds, localDstIds, data, index, masters, mirrors,
+      global2local, local2global, masterAttrs, newMirrorAttrs,
+      masterMask, numPartitions, activeSet)
   }
 
   /** Return a new `EdgePartition` with the specified edge data. */
   def withData[ED2: ClassTag](newData: Array[ED2]): EdgePartition[ED2, VD] = {
-    new EdgePartition(localSrcIds, localDstIds, newData, index, masters, mirrors,
+    new EdgePartition (localSrcIds, localDstIds, newData, index, masters, mirrors,
       global2local, local2global, masterAttrs, mirrorAttrs,
       masterMask, numPartitions, activeSet)
   }
 
   def withMask(newMask: BitSet): EdgePartition[ED, VD] = {
-    new EdgePartition(localSrcIds, localDstIds, data, index, masters, mirrors,
+    new EdgePartition (localSrcIds, localDstIds, data, index, masters, mirrors,
       global2local, local2global, masterAttrs, mirrorAttrs,
       newMask, numPartitions, activeSet)
+  }
+}
+
+object EdgePartition {
+  // local edge level operation
+  // input: get all the masters that have changed the attrs
+  // output: all the masters in this partition attrs have been changed
+  // 1.18: add the master mask, need to change the edgePartition structure?
+  def diff[VD: ClassTag](masterAttrsWithMask: LocalMastersWithMask[VD],
+    otherAttrsWithMask: LocalMastersWithMask[VD]): LocalMastersWithMask[VD] = {
+    val newMask = masterAttrsWithMask.mask & otherAttrsWithMask.mask
+    var i = newMask.nextSetBit(0)
+    val masterAttrs = masterAttrsWithMask.attrs
+    val otherAttrs = otherAttrsWithMask.attrs
+    while (i >= 0) {
+      if (masterAttrs(i) == otherAttrs(i)) {
+        newMask.unset(i)
+      }
+      i = newMask.nextSetBit(i + 1)
+    }
+    LocalMastersWithMask(otherAttrs, newMask)
   }
 }
 

@@ -17,6 +17,7 @@
 
 package org.apache.spark.graphx.impl
 
+// scalastyle:off println
 import scala.reflect.ClassTag
 
 import org.apache.spark.graphx._
@@ -61,6 +62,7 @@ class ReplicatedVertexView[VD: ClassTag, ED: ClassTag](
   def upgrade(vertices: VertexRDD[VD], includeSrc: Boolean, includeDst: Boolean) {
     val shipSrc = includeSrc && !hasSrcId
     val shipDst = includeDst && !hasDstId
+    println("upgrade: ship Src & Dst: " + shipSrc + " " + shipDst)
     if (shipSrc || shipDst) {
       println("upgrade")
       val shippedVerts: RDD[(Int, VertexAttributeBlock[VD])] =
@@ -110,12 +112,14 @@ class ReplicatedVertexView[VD: ClassTag, ED: ClassTag](
         hasSrcId, hasDstId))
       .partitionBy(edges.partitioner.get)
 
+    println(s"After shipVertex: hasSrcId $hasSrcId, hasDstId $hasDstId")
     val newEdges = edges.withPartitionsRDD(edges.partitionsRDD.zipPartitions(shippedVerts) {
       (ePartIter, shippedVertsIter) => ePartIter.map {
         case (pid, edgePartition) =>
           (pid, edgePartition.updateVertices(shippedVertsIter.flatMap(_._2.iterator)))
       }
     })
+    println(s"After edge updateVertices: hasSrcId $hasSrcId, hasDstId $hasDstId")
     new ReplicatedVertexView(newEdges, hasSrcId, hasDstId)
   }
 }

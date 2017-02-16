@@ -17,12 +17,12 @@
 
 package org.apache.spark.graphxpp.utils
 
+import org.apache.spark.graphxpp._
 import org.apache.spark.SparkContext
-import org.apache.spark.graphxpp.{VertexId, Graph}
 import org.apache.spark.rdd.RDD
 import org.apache.spark.storage.StorageLevel
 
-/**
+/*
  * Created by XinhuiTian on 17/1/3.
  */
 object GraphGenerators {

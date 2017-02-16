@@ -17,11 +17,13 @@
 
 package org.apache.spark.graphxpp
 
-import org.apache.spark.graphxpp.impl.{VertexAttrBlock, GraphImpl}
-import org.apache.spark.graphxpp.utils.GraphUtils
-import org.apache.spark.rdd.RDD
+// scalastyle:off println
 
 import scala.reflect.ClassTag
+
+import org.apache.spark.graphxpp.impl.GraphImpl
+import org.apache.spark.graphxpp.utils.GraphUtils
+import org.apache.spark.rdd.RDD
 
 /**
  * Created by XinhuiTian on 16/12/31.
@@ -43,7 +45,8 @@ object Pregel {
     var g = graph.mapVertices((vid, vdata) => vprog(vid, vdata, initialMsg)).cache()
 
     // g.triplets.foreachPartition{ t =>
-      // t.foreach(ti => println(ti.srcId + " " + ti.srcAttr + " " + ti.dstId + " " + ti.dstAttr)); println }
+      // t.foreach(ti => println(ti.srcId + " "
+    // + ti.srcAttr + " " + ti.dstId + " " + ti.dstAttr)); println }
 
     var messages = GraphUtils.mapReduceTriplets(g, sendMsg, mergeMsg).cache()
 
@@ -95,7 +98,8 @@ object Pregel {
       // currentG.verticesWithAttrs.collect().foreach(println)
 
       // currentG.triplets.foreachPartition{ t =>
-        // t.foreach(ti => println(ti.srcId + " " + ti.srcAttr + " " + ti.dstId + " " + ti.dstAttr)); println }
+        // t.foreach(ti => println(ti.srcId +
+      // " " + ti.srcAttr + " " + ti.dstId + " " + ti.dstAttr)); println }
       val oldMessages = messages
       // messages.unpersist(blocking = false)
       // oldMessages.cache()

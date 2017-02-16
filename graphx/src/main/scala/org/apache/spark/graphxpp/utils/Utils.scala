@@ -17,12 +17,12 @@
 
 package org.apache.spark.graphxpp.utils
 
+import scala.reflect.ClassTag
+
 import org.apache.spark.graphxpp._
 import org.apache.spark.graphxpp.impl.{GraphImpl, VertexAttrBlock}
 import org.apache.spark.rdd.RDD
 import org.apache.spark.util.collection.{BitSet, PrimitiveVector}
-
-import scala.reflect.ClassTag
 
 /**
  * Created by XinhuiTian on 17/1/1.

@@ -16,11 +16,11 @@
  */
 package org.apache.spark.graphxpp
 
+import scala.reflect.ClassTag
+
 import org.apache.spark.graphxpp.impl.VertexAttrBlock
 import org.apache.spark.graphxpp.lib.PageRank
 import org.apache.spark.rdd.RDD
-
-import scala.reflect.ClassTag
 
 /**
  * Created by XinhuiTian on 17/1/5.

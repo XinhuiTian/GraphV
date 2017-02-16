@@ -17,17 +17,17 @@
 
 package org.apache.spark.graphxpp.impl
 
+// scalastyle:off println
+import scala.reflect.ClassTag
+
 import org.apache.spark.graphxpp.PartitionStrategy
 import org.apache.spark.graphxpp.impl.GraphImpl.MasterPositions
 import org.apache.spark.graphxpp.utils.collection.GraphXPrimitiveKeyOpenHashMap
 import org.apache.spark.util.collection.{BitSet, OpenHashMap, OpenHashSet, PrimitiveVector}
-import org.apache.spark.{HashPartitioner, graphxpp}
+import org.apache.spark.HashPartitioner
 import org.apache.spark.graphxpp._
 import org.apache.spark.rdd.RDD
 import org.apache.spark.storage.StorageLevel
-
-import scala.reflect.ClassTag
-import scala.util.Random
 
 /**
  * Created by XinhuiTian on 16/11/28.
@@ -116,7 +116,7 @@ class GraphImpl[ED: ClassTag, VD: ClassTag](@transient var edges: EdgeRDDImpl[ED
   }
 
   // TODO: upgrade should only ship vertices that have not been sync
-  override def upgrade = {
+  override def upgrade: Unit = {
     // println("upgrade")
     edges.cache()
     edges = edges.upgrade
@@ -133,12 +133,6 @@ class GraphImpl[ED: ClassTag, VD: ClassTag](@transient var edges: EdgeRDDImpl[ED
   }
 
   override def joinMsgs[A: ClassTag](msgs: RDD[(PartitionID, VertexAttrBlock[A])],
-      withActives: Boolean = true)
-    (mapFunc: (VertexId, VD, A) => VD): GraphImpl[ED, VD] = {
-    joinMasterAttrs(msgs, withActives)(mapFunc)
-  }
-
-  def joinMasterAttrs[A: ClassTag](msgs: RDD[(PartitionID, VertexAttrBlock[A])],
       withActives: Boolean = true)
     (mapFunc: (VertexId, VD, A) => VD): GraphImpl[ED, VD] = {
     val uf = (id: VertexId, data: VD, o: Option[A]) => {
@@ -160,9 +154,14 @@ class GraphImpl[ED: ClassTag, VD: ClassTag](@transient var edges: EdgeRDDImpl[ED
       // val oldVertexAttr = edges.mastersWithAttrs.cache()
       // println("VD == VD2")
       edges.cache()
-      val newVertexAttr = edges.leftJoin (msgs, withActives)(updateF).localMastersWithAttrs
-      val newEdgesWithDiffAttrs = edges.asInstanceOf[EdgeRDDImpl[ED, VD2]].diff(newVertexAttr)
-      val newEdges = edges.asInstanceOf[EdgeRDDImpl[ED, VD2]].updateVertices
+      val tmpEdges = edges.leftJoin (msgs, withActives)(updateF).cache()
+      val oldVertexAttr = edges.localMastersWithAttrs
+      val newVertexAttr = tmpEdges.localMastersWithAttrs
+      val newEdgesWithDiffAttrs = GraphImpl.diff(oldVertexAttr
+        .asInstanceOf[RDD[(PartitionID, LocalMastersWithMask[VD2])]], newVertexAttr)
+      val newEdges = tmpEdges
+        .asInstanceOf[EdgeRDDImpl[ED, VD2]]
+        .updateVerticesWithMask(newEdgesWithDiffAttrs)
       new GraphImpl(newEdges)
 
     } else {
@@ -343,6 +342,17 @@ class GraphImpl[ED: ClassTag, VD: ClassTag](@transient var edges: EdgeRDDImpl[ED
 
 object GraphImpl {
 
+  def diff[VD: ClassTag](vertices: RDD[(PartitionID, LocalMastersWithMask[VD])],
+    others: RDD[(PartitionID, LocalMastersWithMask[VD])]):
+  RDD[(PartitionID, LocalMastersWithMask[VD])] = {
+    vertices.zipPartitions(others) {
+      (vertPartIter, otherPartIter) =>
+        val (pid, vertPart) = vertPartIter.next()
+        val (_, otherPart) = otherPartIter.next()
+        Iterator((pid, EdgePartition.diff(vertPart, otherPart)))
+    }
+  }
+
   def apply[ED: ClassTag, VD: ClassTag](
     edges: RDD[Edge[ED]],
     defaultVertexAttr: VD,
@@ -405,55 +415,44 @@ object GraphImpl {
 
     // routingTable.count()
 
-    /*
-    routingTable.foreach { iter =>
-      println("partitionID: " + iter._1)
-      iter._2.foreach{ vids => vids.foreach{ vid => print(vid + " ") }; println}
-      println
-    }
-    */
-
-    // determine the mirrors for each edge partition
-    val mirrorsPerPart = routingTable.mapPartitionsWithIndex{ (masterPid, iter) =>
-      iter.flatMap { table =>
-        // val mirrorPid = masterPid
-        val routingTable = table._2
-        val mirrors = routingTable.zipWithIndex
-          .flatMap {case (vids, mirrorPid) =>
-            if (masterPid != mirrorPid) {
-              vids.map (vid => (mirrorPid, (vid, masterPid)))
-            } else {
-              Array.empty [(Int, (Long, Int))]
-            }
-          }
-
-        mirrors
-      }
-    }.forcePartitionBy(vertexPartitioner)
-      .mapPartitionsWithIndex {(pid, iter) =>
-        // var pid = -1
-        val mirrorVids = iter.map(_._2)
-        Iterator((pid, mirrorVids.toArray))
-      }
-
-    val masterWithMirrors = routingTable.zipPartitions(mirrorsPerPart) {
-      (tablePart, mirrorsPart) =>
-        tablePart.map(table => (table._1, (table._2, mirrorsPart.flatMap(_._2).toArray)))
-    }
-    masterWithMirrors.count()
-
-    val finalEdgePartitions = edges.zipPartitions(masterWithMirrors) {
-      (edgePartIter, vertexPartIter) =>
+    val finalEdgePartitions = edges.zipPartitions(routingTable) {
+      (edgePartIter, routingTableIter) =>
         val (pid, edgePart) = edgePartIter.next()
-        val (_, vertexPart) = vertexPartIter.next()
-        val routingTable = vertexPart._1
-        val mirrors = vertexPart._2
-        Iterator((pid, finalEdgePartition(pid, numPartitions,
-          defaultVertexAttr, routingTable, mirrors, edgePart)))
+        val (_, routingTable) = routingTableIter.next()
+        // val routingTable = vertexPart._1
+        // val mirrors = vertexPart._2
+        Iterator((pid, finalEdgePartitionWithoutMirrors(pid, numPartitions,
+          defaultVertexAttr, routingTable, edgePart)))
     }
 
     new GraphImpl(new EdgeRDDImpl(finalEdgePartitions))
   }
+
+  def finalEdgePartitionWithoutMirrors[ED: ClassTag, VD: ClassTag](pid: PartitionID,
+    numParts: Int,
+    defaultVertexAttr: VD,
+    mastersRouteTable: Array[Array[VertexId]],
+    edgePart: SimpleEdgePartition[ED]): EdgePartition[ED, VD] = {
+
+    // 1. build the global2local map using masters and mirrors
+    val edges = edgePart.edgeArray
+
+    // compute the mirrors from edgePartition
+    val vertices = new OpenHashSet[VertexId]
+    edgePart.edgeArray.foreach { e =>
+      vertices.add(e.srcId)
+      vertices.add(e.dstId)
+    }
+    val vertexPartitioner = new HashPartitioner(numParts)
+
+    val mirrors = vertices.iterator
+      .map( vid => (vid, vertexPartitioner.getPartition(vid)) )
+      .filter(_._2 != pid).toArray
+
+    finalEdgePartition(pid, numParts, defaultVertexAttr,
+      mastersRouteTable, mirrors, edgePart)
+  }
+
 
   def finalEdgePartition[ED: ClassTag, VD: ClassTag](pid: PartitionID,
     numParts: Int,
@@ -471,7 +470,9 @@ object GraphImpl {
 
     // val localMasters = new Array[Iterable[PartitionID]](masters.size)
 
-    val localMirrors = new Array[PartitionID](mirrors.size)
+    val mirrorSize = mirrors.length
+
+    val localMirrors = new Array[PartitionID](mirrorSize)
 
     var currLocalId = -1
     // array for edge attr storage
@@ -495,6 +496,7 @@ object GraphImpl {
     }
     */
 
+
     mastersRouteTable(pid).foreach(v => global2local.changeValue(v,
        { currLocalId += 1; local2global += v; currLocalId }, identity))
 
@@ -512,6 +514,7 @@ object GraphImpl {
     mastersRouteTable.update(pid, Array.empty)
 
     val tempLocalMasters = Array.fill(numParts)(new PrimitiveVector[Int])
+    println("numParts: " + numParts)
     for (i <- 0 until numParts) {
       for (vid <- mastersRouteTable(i)) {
         tempLocalMasters(i) += global2local(vid)
@@ -553,7 +556,7 @@ object GraphImpl {
     } */
     // val mastersWithPid = pid2masterId.map(v => v.trim().array)
 
-    val mirrorSize = mirrors.length
+
     val masterSize = vertexAttrs.length - mirrorSize
 
 

@@ -57,6 +57,7 @@ case class Edge[@specialized(Char, Int, Boolean, Byte, Long, Float, Double) ED] 
 }
 
 object Edge {
+  // first compare the srcId, then the dstId
   private[graphx] def lexicographicOrdering[ED] = new Ordering[Edge[ED]] {
     override def compare(a: Edge[ED], b: Edge[ED]): Int = {
       if (a.srcId == b.srcId) {

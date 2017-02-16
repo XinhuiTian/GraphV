@@ -17,11 +17,13 @@
 
 package org.apache.spark.graphxpp
 
-import org.apache.spark.SparkContext
+// scalastyle:off println
+
 import org.apache.spark.graphxpp.impl.GraphImpl
 import org.apache.spark.internal.Logging
 import org.apache.spark.rdd.RDD
 import org.apache.spark.storage.StorageLevel
+import org.apache.spark.SparkContext
 
 /**
  * Created by XinhuiTian on 16/11/28.
@@ -68,10 +70,10 @@ object GraphLoader extends Logging {
           // srcId
           // new Edge(srcId, dstId, 1)
         }
-        //else new Edge(0, 0, 1)
+        // else new Edge(0, 0, 1)
       }
       Iterator((pid, builder.toEdgePartition))
-    }
+    }.cache()
 
     edges.count()
 

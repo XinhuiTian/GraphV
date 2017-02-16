@@ -14,7 +14,6 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-
 package org.apache.spark.graphx
 
 import scala.reflect.ClassTag
@@ -131,6 +130,7 @@ object Pregel extends Logging {
     var i = 0
     while (activeMessages > 0 && i < maxIterations) {
       // Receive the messages and update the vertices.
+      val startTime = System.currentTimeMillis()
       prevG = g
       g = g.joinVertices(messages)(vprog).cache()
 
@@ -144,8 +144,11 @@ object Pregel extends Logging {
       // (depended on by the vertices of g) and the vertices of prevG (depended on by oldMessages
       // and the vertices of g).
       activeMessages = messages.count()
+      val endTime = System.currentTimeMillis()
 
-      logInfo("Pregel finished iteration " + i)
+      // scalastyle:off println
+      println(s"Pregel finished iteration: $i actives: $activeMessages" +
+        s" time: ${endTime - startTime}")
 
       // Unpersist the RDDs hidden by newly-materialized RDDs
       oldMessages.unpersist(blocking = false)

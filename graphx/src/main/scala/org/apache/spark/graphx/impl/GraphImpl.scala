@@ -17,6 +17,7 @@
 
 package org.apache.spark.graphx.impl
 
+// scalastyle:off println
 import scala.reflect.{classTag, ClassTag}
 
 import org.apache.spark.HashPartitioner
@@ -125,6 +126,7 @@ class GraphImpl[VD: ClassTag, ED: ClassTag] protected (
     // null if not
     if (eq != null) {
       vertices.cache()
+      println("In mapVertices: VD == VD2")
       // The map preserves type, so we can use incremental replication
       val newVerts = vertices.mapVertexPartitions(_.map(f)).cache()
       val changedVerts = vertices.asInstanceOf[VertexRDD[VD2]].diff(newVerts)
@@ -250,7 +252,7 @@ class GraphImpl[VD: ClassTag, ED: ClassTag] protected (
     // The implicit parameter eq will be populated by the compiler if VD and VD2 are equal, and left
     // null if not
     if (eq != null) {
-      println("VD == VD2")
+      println("outerJoinVertices: VD == VD2")
       vertices.cache()
       // updateF preserves type, so we can use incremental replication
       val newVerts = vertices.leftJoin(other)(updateF).cache()

@@ -17,10 +17,10 @@
 
 package org.apache.spark.graphxpp
 
+import scala.reflect.ClassTag
+
 import org.apache.spark.graphxpp.impl.SimpleEdgePartition
 import org.apache.spark.util.collection.PrimitiveVector
-
-import scala.reflect.ClassTag
 
 /**
  * Created by XinhuiTian on 16/12/25.

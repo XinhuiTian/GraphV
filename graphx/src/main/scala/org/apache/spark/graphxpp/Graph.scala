@@ -18,11 +18,13 @@
 package org.apache.spark.graphxpp
 
 import scala.language.implicitConversions
-import org.apache.spark.graphxpp.impl.{GraphImpl, VertexAttrBlock, EdgeRDDImpl}
+import scala.reflect.ClassTag
+
+import org.apache.spark.graphxpp.impl.{EdgeRDDImpl, GraphImpl, VertexAttrBlock}
 import org.apache.spark.rdd.RDD
 import org.apache.spark.storage.StorageLevel
 
-import scala.reflect.ClassTag
+
 
 /**
  * Created by XinhuiTian on 16/11/27.

@@ -17,11 +17,15 @@
 
 package org.apache.spark.graphxpp
 
-import org.apache.spark.graphxpp.impl.{EdgePartition, EdgeRDDImpl}
-import org.apache.spark.rdd.RDD
-import org.apache.spark.{TaskContext, Partition, Dependency, SparkContext}
-
 import scala.reflect.ClassTag
+
+import org.apache.spark.Dependency
+import org.apache.spark.graphxpp.impl.{EdgePartition, EdgeRDDImpl}
+import org.apache.spark.Partition
+import org.apache.spark.rdd.RDD
+import org.apache.spark.SparkContext
+import org.apache.spark.TaskContext
+
 
 /**
  * Created by XinhuiTian on 16/11/27.

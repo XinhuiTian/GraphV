@@ -17,10 +17,10 @@
 
 package org.apache.spark.graphxpp.lib
 
-import org.apache.spark.graphxpp.utils.GraphUtils
-import org.apache.spark.graphxpp.{TripletFields, VertexId, Graph}
-
+// scalastyle:off println
 import scala.reflect.ClassTag
+
+import org.apache.spark.graphxpp._
 
 /**
  * Created by XinhuiTian on 17/1/8.
