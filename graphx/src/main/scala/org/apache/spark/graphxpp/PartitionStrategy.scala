@@ -38,4 +38,27 @@ object PartitionStrategy {
     }
   }
 
+  case object EdgePartition2D extends PartitionStrategy {
+    override def getPartition(src: VertexId, dst: VertexId, numParts: PartitionID): PartitionID = {
+      val ceilSqrtNumParts: PartitionID = math.ceil(math.sqrt(numParts)).toInt
+      val mixingPrime: VertexId = 1125899906842597L
+      if (numParts == ceilSqrtNumParts * ceilSqrtNumParts) {
+        // Use old method for perfect squared to ensure we get same results
+        val col: PartitionID = (math.abs(src * mixingPrime) % ceilSqrtNumParts).toInt
+        val row: PartitionID = (math.abs(dst * mixingPrime) % ceilSqrtNumParts).toInt
+        (col * ceilSqrtNumParts + row) % numParts
+
+      } else {
+        // Otherwise use new method
+        val cols = ceilSqrtNumParts
+        val rows = (numParts + cols - 1) / cols
+        val lastColRows = numParts - rows * (cols - 1)
+        val col = (math.abs(src * mixingPrime) % numParts / rows).toInt
+        val row = (math.abs(dst * mixingPrime) % (if (col < cols - 1) rows else lastColRows)).toInt
+        col * rows + row
+
+      }
+    }
+  }
+
 }

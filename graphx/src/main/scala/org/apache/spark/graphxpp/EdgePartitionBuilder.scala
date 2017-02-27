@@ -38,6 +38,6 @@ class EdgePartitionBuilder[ED: ClassTag]
   }
 
   def toEdgePartition: SimpleEdgePartition[ED] = {
-    new SimpleEdgePartition(edges.iterator)
+    new SimpleEdgePartition(edges.toArray)
   }
 }

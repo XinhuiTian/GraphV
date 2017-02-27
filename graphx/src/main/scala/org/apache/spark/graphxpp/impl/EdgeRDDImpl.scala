@@ -17,7 +17,6 @@
 package org.apache.spark.graphxpp.impl
 
 // scalastyle:off println
-import org.apache.spark.util.collection.BitSet
 
 import scala.reflect.ClassTag
 
@@ -26,6 +25,7 @@ import org.apache.spark.OneToOneDependency
 import org.apache.spark.graphxpp._
 import org.apache.spark.rdd.RDD
 import org.apache.spark.storage.StorageLevel
+import org.apache.spark.util.collection.BitSet
 
 /**
  * Created by XinhuiTian on 16/12/22.
@@ -49,6 +49,10 @@ class EdgeRDDImpl[ED: ClassTag, VD: ClassTag] (
     .map(part =>
     (part._1, LocalMastersWithMask(part._2.getLocalMastersWithAttr, part._2.getMask)))
 
+  def getReplicatedVerticesNum: Double = {
+    partitionsRDD.map(_._2.getVertexNum).sum()
+  }
+
   /**
    * If `partitionsRDD` already has a partitioner, use it. Otherwise assume that the
    * [[PartitionID]]s in `partitionsRDD` correspond to the actual partitions and create a new
@@ -65,24 +69,13 @@ class EdgeRDDImpl[ED: ClassTag, VD: ClassTag] (
 
   // force to sync all mirror values
   def upgrade: EdgeRDDImpl[ED, VD] = {
-    val msgs = shipMasters.forcePartitionBy(new HashPartitioner(getNumPartitions))
+    val msgs = this.partitionsRDD.mapPartitions(_.flatMap { part =>
+      part._2.shipMasterVertexAttrs
+    }).forcePartitionBy(new HashPartitioner(getNumPartitions))
+
     println("upgrade")
     // msgs.collect.foreach { msg => println(msg._1); msg._2.iterator.foreach(println)}
     syncMirrors(msgs)
-  }
-
-  // update mirrors using the master mask
-  def updateVertices: EdgeRDDImpl[ED, VD] = {
-    val shippedMsgs = this.partitionsRDD.mapPartitions(_.flatMap {
-      part => part._2.shipMasterVertexAttrs
-    }).forcePartitionBy(new HashPartitioner(getNumPartitions))
-
-    this.withPartitionsRDD(this.partitionsRDD.zipPartitions(shippedMsgs) {
-      (edgePartIter, msgPartIter) => edgePartIter.map {
-        case (pid, edgePart) =>
-          (pid, edgePart.updateVertices(msgPartIter.flatMap(_._2.iterator)))
-      }
-    })
   }
 
   def updateVerticesWithMask(masks: RDD[(PartitionID, LocalMastersWithMask[VD])]):
@@ -100,12 +93,18 @@ class EdgeRDDImpl[ED: ClassTag, VD: ClassTag] (
       part => part._2.shipMasterVertexAttrs
     }).forcePartitionBy(new HashPartitioner(getNumPartitions)) */
 
-    this.withPartitionsRDD(this.partitionsRDD.zipPartitions(shippedMsgs) {
-      (edgePartIter, msgPartIter) => edgePartIter.map {
-        case (pid, edgePart) =>
-          (pid, edgePart.updateVertices(msgPartIter.flatMap(_._2.iterator)))
-      }
-    })
+    syncMirrors(shippedMsgs)
+  }
+
+  def syncMirrors(msgs: RDD[(PartitionID, ShippedMsg[VD])]): EdgeRDDImpl[ED, VD] = {
+    this.withPartitionsRDD(
+      partitionsRDD.zipPartitions(msgs) { (thisIter, msgIter) =>
+        thisIter.map {
+          case (pid, edgePartition) =>
+            // msgPart.foreach(println)
+            (pid, edgePartition.updateVertices ( msgIter.flatMap (_._2.iterator)))
+        }
+      })
   }
 
   def updateActiveSet: EdgeRDDImpl[ED, VD] = {
@@ -134,7 +133,6 @@ class EdgeRDDImpl[ED: ClassTag, VD: ClassTag] (
   }
 
 
-
   def mapVertices[VD2: ClassTag](f: (VertexId, VD) => VD2): EdgeRDDImpl[ED, VD2] = {
     this.withPartitionsRDD(this.partitionsRDD.mapPartitions(_.flatMap {part =>
       Iterator((part._1, part._2.mapVertices(f)))
@@ -153,24 +151,7 @@ class EdgeRDDImpl[ED: ClassTag, VD: ClassTag] (
     }, preservesPartitioning = true))
   }
 
-  def shipMasters: RDD[(PartitionID, ShippedMsg[VD])] = {
-    this.partitionsRDD.mapPartitions(_.flatMap { part =>
-      part._2.shipMasterVertexAttrs
-    })
-  }
 
-  def syncMirrors(msgs: RDD[(PartitionID, ShippedMsg[VD])]): EdgeRDDImpl[ED, VD] = {
-    this.withPartitionsRDD(
-      partitionsRDD.zipPartitions(msgs) { (thisIter, msgIter) =>
-         thisIter.map {
-           case (pid, edgePartition) =>
-             val msgPart = msgIter.flatMap (_._2.iterator)
-             // msgPart.foreach(println)
-             (pid, edgePartition.updateVertices (msgPart))
-         }
-      }
-    )
-  }
 
   def leftJoin[VD2: ClassTag, A: ClassTag](other: RDD[(PartitionID, VertexAttrBlock[A])],
       withActives: Boolean = true)
@@ -188,7 +169,7 @@ class EdgeRDDImpl[ED: ClassTag, VD: ClassTag] (
   def withActiveSet[A: ClassTag]
   (actives: RDD[(PartitionID, VertexAttrBlock[A])]): EdgeRDDImpl[ED, VD] = {
 
-    val activeVertices = actives.map(part => (part._1, part._2.clone().msgs.map(_._1)))
+    val activeVertices = actives.map(part => (part._1, part._2.msgs.map(_._1)))
         .setName("EdgeWithActiveSet")
         .cache()
     println("Actives here")

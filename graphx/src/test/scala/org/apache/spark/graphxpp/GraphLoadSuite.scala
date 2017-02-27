@@ -22,6 +22,7 @@ import java.nio.charset.StandardCharsets
 
 import org.apache.spark.SparkFunSuite
 import org.apache.spark.graphx.LocalSparkContext
+import org.apache.spark.graphxpp.impl.GraphImpl
 import org.apache.spark.util.Utils
 
 /**
@@ -43,8 +44,11 @@ class GraphLoadSuite extends SparkFunSuite with LocalSparkContext {
 
       try {
         val startTime = System.currentTimeMillis()
-        // val graph = GraphLoader.edgeListFile(sc, "/Users/XinhuiTian/Downloads/roadNet-CA.txt", false, 10).cache()
-        val graph = GraphLoader.edgeListFile(sc, tmpDir.getAbsolutePath, false, 10).cache()
+        // val graph = GraphLoader.edgeListFile(sc,
+        //  "/Users/XinhuiTian/Downloads/roadNet-CA.txt", false, 10,
+        //   edgePartitioner = "EdgePartition2D").cache()
+        val graph = GraphLoader.edgeListFile(sc, tmpDir.getAbsolutePath, false, 10,
+          edgePartitioner = "BiEdgePartition").cache()
 
         graph.edges.partitionsRDD.foreach{ part =>
           println("Masters")
@@ -57,6 +61,7 @@ class GraphLoadSuite extends SparkFunSuite with LocalSparkContext {
         }
         val period = System.currentTimeMillis() - startTime
         println("Loading Time: " + period)
+        println("Replications: " + GraphImpl.getVertRNum(graph))
 
         // println("Mirrors")
         // graph.edges.partitionsRDD.foreach{ part => part._2.getMirrors.foreach(println); println }

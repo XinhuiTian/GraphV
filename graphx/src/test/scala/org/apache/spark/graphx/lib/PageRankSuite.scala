@@ -19,6 +19,7 @@ package org.apache.spark.graphx.lib
 
 import org.apache.spark.SparkFunSuite
 import org.apache.spark.graphx._
+import org.apache.spark.graphx.lib._
 import org.apache.spark.graphx.util.GraphGenerators
 
 
@@ -177,9 +178,11 @@ class PageRankSuite extends SparkFunSuite with LocalSparkContext {
       val errorTol = 1.0e-5
 
       // val staticRanks = chain.staticPageRank(numIter, resetProb).vertices
-      val staticRanks = graph.staticPageRank(numIter, resetProb).vertices
+      // val staticRanks = graph.staticPageRank(numIter, resetProb).vertices
       // val dynamicRanks = chain.pageRank(tol, resetProb).vertices
 
+      val convergedRanks = PageRank.runUntilConvergence(graph, 0.01).vertices
+      // PageRank.runUntilConvergence(graph)
       // assert(compareRanks(staticRanks, dynamicRanks) < errorTol)
     }
   }

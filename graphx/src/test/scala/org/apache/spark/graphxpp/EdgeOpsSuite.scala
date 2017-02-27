@@ -7,6 +7,7 @@ import java.nio.charset.StandardCharsets
 
 import org.apache.spark.SparkFunSuite
 import org.apache.spark.graphx.LocalSparkContext
+import org.apache.spark.graphxpp.impl.{GraphImpl, LocalMastersWithMask}
 import org.apache.spark.util.Utils
 
 /**
@@ -108,7 +109,7 @@ class EdgeOpsSuite extends SparkFunSuite with LocalSparkContext {
     }
   }
 
-  test("upgrade") {
+  test("updateWithMask") {
     withSpark { sc =>
       val tmpDir = Utils.createTempDir()
       val graphFile = new File(tmpDir.getAbsolutePath, "graph.txt")
@@ -121,45 +122,25 @@ class EdgeOpsSuite extends SparkFunSuite with LocalSparkContext {
       writer.close()
       try {
         var g = GraphLoader.edgeListFile(sc, tmpDir.getAbsolutePath, false, 10)
+
         g = g.mapVertices((vid, i) => 10)
-        g.upgrade
+        val masterMasks = g.edges.localMastersWithAttrs.map { part =>
+          val newMask = part._2.mask
+          newMask.clearUntil(part._2.attrs.length)
+          (part._1, LocalMastersWithMask(part._2.attrs, newMask))
+        }
+        g = new GraphImpl(g.edges.updateVerticesWithMask(masterMasks))
 
         g.edges.partitionsRDD.foreach {iter =>
           val part = iter._2
-          println(iter._1)
+          print(s"pid: ${iter._1}: ")
           for (i <- 0 until part.getMirrors.size) {
-            println(part.vertexAttr(i + part.getMasters.size))
+            print(s"(${part.getLocal2Global(i + part.getMasters.size)},"
+              + s"${part.vertexAttr(i + part.getMasters.size)}) ")
           }
+          println
         }
-      } finally {
-        Utils.deleteRecursively(tmpDir)
-      }
-    }
-  }
 
-  test("upgrade") {
-    withSpark { sc =>
-      val tmpDir = Utils.createTempDir()
-      val graphFile = new File(tmpDir.getAbsolutePath, "graph.txt")
-      // println(tmpDir.getAbsolutePath)
-      val writer = new OutputStreamWriter(new FileOutputStream(graphFile), StandardCharsets.UTF_8)
-      for (i <- (1 until 101)) {
-        val j = i - 1
-        writer.write(s"$i $j\n")
-      }
-      writer.close()
-      try {
-        var g = GraphLoader.edgeListFile(sc, tmpDir.getAbsolutePath, false, 10)
-        g = g.mapVertices((vid, i) => 10)
-        g.upgrade
-
-        g.edges.partitionsRDD.foreach {iter =>
-          val part = iter._2
-          println(iter._1)
-          for (i <- 0 until part.getMirrors.size) {
-            println(part.vertexAttr(i + part.getMasters.size))
-          }
-        }
       } finally {
         Utils.deleteRecursively(tmpDir)
       }

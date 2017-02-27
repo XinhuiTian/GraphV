@@ -16,7 +16,7 @@
  */
 
 package org.apache.spark.graphxpp
-
+// scalastyle:off println
 import org.apache.spark.graphxpp.utils.GraphUtils
 import org.apache.spark.rdd.RDD
 import org.apache.spark.{SparkContext, SparkFunSuite}
@@ -34,7 +34,7 @@ class GraphSuite extends SparkFunSuite with LocalSparkContext {
     withSpark {sc =>
       val ring = (0L to 100L).zip ((1L to 99L) :+ 0L)
       val doubleRing = ring ++ ring
-      val graph = Graph.fromEdgeTuples (sc.parallelize (doubleRing), 1)
+      val graph = Graph.fromEdgeTuples (sc.parallelize (doubleRing, 3), 1)
       assert (graph.edges.count () == doubleRing.size)
       assert (graph.edges.collect ().forall (e => e.attr == 1))
     }

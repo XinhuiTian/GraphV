@@ -19,11 +19,10 @@ package org.apache.spark.graphxpp
 
 // scalastyle:off println
 
+import org.apache.spark.SparkContext
 import org.apache.spark.graphxpp.impl.GraphImpl
 import org.apache.spark.internal.Logging
-import org.apache.spark.rdd.RDD
 import org.apache.spark.storage.StorageLevel
-import org.apache.spark.SparkContext
 
 /**
  * Created by XinhuiTian on 16/11/28.
@@ -36,11 +35,12 @@ object GraphLoader extends Logging {
     path: String,
     canonicalOrientation: Boolean = false,
     numEdgePartitions: Int = -1,
+    edgePartitioner: String = "",
     edgeStorageLevel: StorageLevel = StorageLevel.MEMORY_ONLY,
     vertexStorageLevel: StorageLevel = StorageLevel.MEMORY_ONLY)
     // partitionStrategy: PartitionStrategy = PartitionStrategy.EdgePartition1D)
-   : GraphImpl[Int, Int] =
-  // : Unit =
+  : GraphImpl[Int, Int] =
+   //: Unit =
   {
     val startTime = System.currentTimeMillis
 
@@ -58,7 +58,7 @@ object GraphLoader extends Logging {
     // new RDD[edge]
     val edges = lines.mapPartitionsWithIndex { (pid, iter) =>
       val builder = new EdgePartitionBuilder[Int]
-      iter.foreach {line =>
+      iter.foreach { line =>
         if (!line.isEmpty && line(0) != '#') {
           val lineArray = line.split("\\s+")
           if (lineArray.length < 2) {
@@ -77,14 +77,22 @@ object GraphLoader extends Logging {
 
     edges.count()
 
-    // edges.foreach(println)
-    // edges.foreach(part => part._2.edgeArray.foreach(println))
-    // edges.foreach(part => part._2..foreach(println))
-
     println("It took %d ms to load the edges".format(System.currentTimeMillis - startTime))
 
-    GraphImpl.fromEdgesSimple(edges, numEdgePartitions, defaultVertexAttr = 1, edgeStorageLevel,
-                                    vertexStorageLevel)
+    // edges.foreach(println)
+    // edges.foreach{ part => part._2.edgeArray.foreach(println); println}
+    // edges.foreach(part => part._2..foreach(println))
+    var finalEdges = edges
+    if (edgePartitioner != "") {
+      finalEdges = GraphImpl.partitionSimplePartitions(finalEdges,
+        numEdgePartitions, edgePartitioner)
+    }
+
+    finalEdges.foreach{ part => part._2.edges.foreach(println); println}
+
+
+    GraphImpl.fromEdgesSimple(finalEdges, numEdgePartitions,
+      defaultVertexAttr = 1, edgeStorageLevel, vertexStorageLevel)
   }
 
 }

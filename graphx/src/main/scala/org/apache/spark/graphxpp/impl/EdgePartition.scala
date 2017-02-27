@@ -18,17 +18,13 @@
 package org.apache.spark.graphxpp.impl
 
 // scalastyle:off println
+import org.apache.spark.graphxpp.EdgeActiveness.EdgeActiveness
+import org.apache.spark.graphxpp._
+import org.apache.spark.graphxpp.utils.collection.GraphXPrimitiveKeyOpenHashMap
+import org.apache.spark.util.collection.{BitSet, OpenHashSet, PrimitiveVector}
+
 import scala.collection.immutable.IndexedSeq
 import scala.reflect.ClassTag
-
-import org.apache.spark.graphx.PartitionStrategy
-import org.apache.spark.graphxpp.utils.collection.GraphXPrimitiveKeyOpenHashMap
-import org.apache.spark.util.collection.{BitSet, PrimitiveVector}
-import org.apache.spark.HashPartitioner
-import org.apache.spark.graphxpp._
-import org.apache.spark.graphxpp.EdgeActiveness.EdgeActiveness
-import org.apache.spark.rdd.RDD
-import org.apache.spark.storage.StorageLevel
 
 
 /**
@@ -50,10 +46,11 @@ class ShippedMsg[VD: ClassTag](val vids: Array[VertexId], val attrs: Array[VD])
   }
 }
 
-case class RemoteMsg[A: ClassTag](vid: VertexId, msg: A)
-
 case class AllMsgs[A: ClassTag](localMasterMsgs: Iterator[(VertexId, A)],
   globalMirrorMsgs: Iterator[(PartitionID, (VertexId, A))])
+
+// record the raw data of edges, convenient for later partition
+case class SimpleEdgePartition[ED: ClassTag](edges: Array[Edge[ED]])
 
 // TODO: using a bitmap to record the mirrors of each master
 private[graphxpp]
@@ -115,6 +112,15 @@ class EdgePartition[
   def getGlobal2Local: GraphXPrimitiveKeyOpenHashMap[VertexId, Int] = global2local
 
   def getActiveSet: Option[VertexSet] = activeSet
+
+  def getVertexNum: Long = {
+    val vset = new OpenHashSet[Int]
+    for (i <- 0 until edgeSize) {
+      vset.add(localSrcIds(i))
+      vset.add(localDstIds(i))
+    }
+    vset.size
+  }
 
   def iterator: Iterator[Edge[ED]] = new Iterator[Edge[ED]] {
     private[this] val edge = new Edge[ED]
@@ -211,9 +217,9 @@ class EdgePartition[
     // println("EdgePartition.leftJoin")
     // other.msgs.foreach(println)
 
-    val otherMsgs = other.clone ()
+    // val otherMsgs = other.clone ()
     // otherMsgs.msgs.foreach(println)
-    otherMsgs.msgs.foreach {v =>
+    other.msgs.foreach {v =>
       val localVid = global2local (v._1)
       // println(v + " " + globalVid)
       otherValues.update (localVid, Some (v._2))
