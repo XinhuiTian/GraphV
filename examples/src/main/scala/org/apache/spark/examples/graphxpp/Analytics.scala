@@ -18,12 +18,13 @@
 // scalastyle:off println
 package org.apache.spark.examples.graphxpp
 
+import scala.collection.mutable
+
 import org.apache.spark.graphxpp.GraphLoader
 import org.apache.spark.graphxpp.lib.PageRank
+import org.apache.spark.SparkConf
+import org.apache.spark.SparkContext
 import org.apache.spark.storage.StorageLevel
-import org.apache.spark.{SparkContext, SparkConf}
-
-import scala.collection.mutable
 
 /**
  * Created by XinhuiTian on 17/1/10.

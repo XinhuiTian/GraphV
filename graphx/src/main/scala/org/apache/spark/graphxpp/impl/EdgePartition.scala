@@ -18,14 +18,15 @@
 package org.apache.spark.graphxpp.impl
 
 // scalastyle:off println
-import org.apache.spark.graphxpp.EdgeActiveness.EdgeActiveness
-import org.apache.spark.graphxpp._
-import org.apache.spark.graphxpp.utils.collection.GraphXPrimitiveKeyOpenHashMap
-import org.apache.spark.util.collection.{BitSet, OpenHashSet, PrimitiveVector}
 
 import scala.collection.immutable.IndexedSeq
 import scala.reflect.ClassTag
 
+import org.apache.spark.graphxpp._
+import org.apache.spark.graphxpp.EdgeActiveness.EdgeActiveness
+import org.apache.spark.graphxpp.collection.PrimitiveKeyOpenHashMap
+import org.apache.spark.graphxpp.utils.collection.GraphXPrimitiveKeyOpenHashMap
+import org.apache.spark.util.collection.{BitSet, OpenHashSet, PrimitiveVector}
 
 /**
  * Created by XinhuiTian on 16/12/21.
@@ -51,6 +52,12 @@ case class AllMsgs[A: ClassTag](localMasterMsgs: Iterator[(VertexId, A)],
 
 // record the raw data of edges, convenient for later partition
 case class SimpleEdgePartition[ED: ClassTag](edges: Array[Edge[ED]])
+
+case class SimpleEdgeWithVertexPartition[ED: ClassTag]
+(edges: OpenHashSet[Edge[ED]],
+  masters: PrimitiveKeyOpenHashMap[VertexId, Byte],
+  inRoutingTable: Array[Array[VertexId]],
+  outRoutingTable: Array[Array[VertexId]])
 
 // TODO: using a bitmap to record the mirrors of each master
 private[graphxpp]

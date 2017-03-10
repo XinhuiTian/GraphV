@@ -133,9 +133,11 @@ class OpenHashSet[@specialized(Long, Int) T: ClassTag](
    *         does not exists previously.
    */
   def addWithoutResize(k: T): Int = {
+    // 1. get the pos using hasher
     var pos = hashcode(hasher.hash(k)) & _mask
     var delta = 1
     while (true) {
+      // this pos is empty
       if (!_bitset.get(pos)) {
         // This is a new key.
         _data(pos) = k
@@ -143,7 +145,7 @@ class OpenHashSet[@specialized(Long, Int) T: ClassTag](
         _size += 1
         return pos | NONEXISTENCE_MASK
       } else if (_data(pos) == k) {
-        // Found an existing key.
+        // Already added
         return pos
       } else {
         // quadratic probing with values increase by 1, 2, 3, ...

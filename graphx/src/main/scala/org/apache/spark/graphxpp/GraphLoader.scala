@@ -37,10 +37,10 @@ object GraphLoader extends Logging {
     numEdgePartitions: Int = -1,
     edgePartitioner: String = "",
     edgeStorageLevel: StorageLevel = StorageLevel.MEMORY_ONLY,
-    vertexStorageLevel: StorageLevel = StorageLevel.MEMORY_ONLY)
+    vertexStorageLevel: StorageLevel = StorageLevel.MEMORY_ONLY,
+    threshold: Int = 100)
     // partitionStrategy: PartitionStrategy = PartitionStrategy.EdgePartition1D)
   : GraphImpl[Int, Int] =
-   //: Unit =
   {
     val startTime = System.currentTimeMillis
 
@@ -80,19 +80,33 @@ object GraphLoader extends Logging {
     println("It took %d ms to load the edges".format(System.currentTimeMillis - startTime))
 
     // edges.foreach(println)
-    // edges.foreach{ part => part._2.edgeArray.foreach(println); println}
+    // edges.foreach{ part => part._2.edges.foreach(println); println}
     // edges.foreach(part => part._2..foreach(println))
-    var finalEdges = edges
-    if (edgePartitioner != "") {
-      finalEdges = GraphImpl.partitionSimplePartitions(finalEdges,
-        numEdgePartitions, edgePartitioner)
+
+
+    if (edgePartitioner == "BiEdgePartition") {
+      val finalEdgesWithVertices = GraphImpl
+        .partitionLHPartitions(edges, numEdgePartitions, threshold)
+
+      finalEdgesWithVertices.count()
+
+      GraphImpl.fromEdgesSimple (edges, numEdgePartitions,
+        defaultVertexAttr = 1, edgeStorageLevel, vertexStorageLevel)
     }
 
-    finalEdges.foreach{ part => part._2.edges.foreach(println); println}
+    else {
+      var finalEdges = edges
+      if (edgePartitioner != "") {
+        finalEdges = GraphImpl.partitionSimplePartitions (finalEdges,
+          numEdgePartitions, edgePartitioner)
+      }
+
+      // finalEdges.foreach{ part => part._2.edges.foreach(println); println}
 
 
-    GraphImpl.fromEdgesSimple(finalEdges, numEdgePartitions,
-      defaultVertexAttr = 1, edgeStorageLevel, vertexStorageLevel)
+      GraphImpl.fromEdgesSimple (finalEdges, numEdgePartitions,
+        defaultVertexAttr = 1, edgeStorageLevel, vertexStorageLevel)
+    }
   }
 
 }

@@ -18,6 +18,7 @@
 package org.apache.spark.graphxpp.impl
 
 import scala.reflect.ClassTag
+
 // scalastyle:off println
 import org.apache.spark.HashPartitioner
 import org.apache.spark.graphxpp._
@@ -25,8 +26,6 @@ import org.apache.spark.graphxpp.utils.collection.GraphXPrimitiveKeyOpenHashMap
 import org.apache.spark.rdd.RDD
 import org.apache.spark.storage.StorageLevel
 import org.apache.spark.util.collection.{BitSet, OpenHashSet, PrimitiveVector}
-
-
 
 /**
  * Created by XinhuiTian on 16/11/28.
@@ -37,9 +36,6 @@ class RoutingTable(val masters: Iterable[MasterPositions],
 
 }
 */
-class AggregateMsg[A: ClassTag](val masterMsgs: RDD[(PartitionID, Iterator[(Int, A)])],
-  val mirrorMsgs: RDD[(PartitionID, Iterator[(VertexId, A)])]) {
-}
 
 class VertexAttrBlock[A: ClassTag](val msgs: Array[(VertexId, A)]) extends Serializable {
   def mergeMsgs(reduceFunc: (A, A) => A): VertexAttrBlock[A] = {
@@ -48,9 +44,6 @@ class VertexAttrBlock[A: ClassTag](val msgs: Array[(VertexId, A)]) extends Seria
     new VertexAttrBlock(vertexMap.toArray)
   }
 }
-
-case class MasterTriplet(vid: VertexId, master: PartitionID,
-  mirrors: Option[Iterable[PartitionID]])
 
 class GraphImpl[ED: ClassTag, VD: ClassTag](@transient var edges: EdgeRDDImpl[ED, VD])
   extends Graph[ED, VD] {
@@ -260,10 +253,12 @@ class GraphImpl[ED: ClassTag, VD: ClassTag](@transient var edges: EdgeRDDImpl[ED
     val remoteMsgs = preAgg.flatMap { msgs =>
       msgs._2.globalMirrorMsgs
     }.groupByKey
+
     /*
     val remoteMsgs = preAgg.mapPartitions(_.flatMap(_._2.globalMirrorMsgs))
         .forcePartitionBy(new HashPartitioner(edges.getNumPartitions))
-        .mapPartitions {}*/
+        .mapPartitions {}
+    */
 
     val localMasterMsgs = preAgg.flatMap { msgs =>
       Iterator((msgs._1, msgs._2.localMasterMsgs))
@@ -368,12 +363,21 @@ object GraphImpl {
     val partitioner = edgePartitioner match {
       case "EdgePartition1D" => new IngressEdgePartition1D(numParts)
       case "EdgePartition2D" => new IngressEdgePartition2D(numParts)
-      case "BiEdgePartition" => new IngressBiDiPartition(numParts, 50)
       case _ => throw new IllegalArgumentException("Invalid PartitionStrategy: "
         + edgePartitioner)
     }
 
     partitioner.fromEdges(edges)
+  }
+
+  def partitionLHPartitions[ED: ClassTag](
+    edges: RDD[(Int, SimpleEdgePartition[ED])],
+    numParts: Int,
+    threshold: Int):
+  RDD[(Int, SimpleEdgeWithVertexPartition[ED])] = {
+    val partitioner = new IngressBiDiPartition(numParts, threshold)
+
+    partitioner.fromEdgesWithVertices(edges)
   }
 
   type MasterPositions = (VertexId, Iterable[PartitionID])
@@ -391,6 +395,17 @@ object GraphImpl {
 
     vertices.iterator.map( vid => (vid, pid) )
   }
+
+  /*
+  def fromEdgesSimpleWithVerts[ED: ClassTag, VD: ClassTag]
+  (graph: RDD[(Int, SimpleEdgeWithVertexPartition[ED])],
+    numPartitions: Int, defaultVertexAttr: VD,
+    edgeStorageLevel: StorageLevel = StorageLevel.MEMORY_ONLY,
+    vertexStorageLevel: StorageLevel = StorageLevel.MEMORY_ONLY):
+  GraphImpl[ED, VD] = {
+
+  }
+  */
 
   // using a hash partitioner to distribute vertices
   def fromEdgesSimple[ED: ClassTag, VD: ClassTag]
