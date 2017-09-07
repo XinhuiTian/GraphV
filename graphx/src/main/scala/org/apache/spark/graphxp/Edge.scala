@@ -19,6 +19,16 @@ package org.apache.spark.graphxp
 
 import org.apache.spark.util.collection.SortDataFormat
 
+case class LocalEdge[@specialized(Char, Int, Boolean, Byte, Long, Float, Double) ED] (
+    var srcId: VertexId = 0,
+    var dstId: VertexId = 0,
+    var localSrcId: Int = 0,
+    var localDstId: Int = 0,
+    var attr: ED = null.asInstanceOf[ED])
+  extends Serializable {
+
+}
+
 /**
  * A single directed edge consisting of a source id, target id,
  * and the data associated with the edge.
@@ -58,7 +68,7 @@ case class Edge[@specialized(Char, Int, Boolean, Byte, Long, Float, Double) ED] 
 
 object Edge {
   // first compare the srcId, then the dstId
-  private[graphx] def lexicographicOrdering[ED] = new Ordering[Edge[ED]] {
+  private[graphxp] def lexicographicOrdering[ED] = new Ordering[Edge[ED]] {
     override def compare(a: Edge[ED], b: Edge[ED]): Int = {
       if (a.srcId == b.srcId) {
         if (a.dstId == b.dstId) 0
@@ -69,7 +79,7 @@ object Edge {
     }
   }
 
-  private[graphx] def edgeArraySortDataFormat[ED] = new SortDataFormat[Edge[ED], Array[Edge[ED]]] {
+  private[graphxp] def edgeArraySortDataFormat[ED] = new SortDataFormat[Edge[ED], Array[Edge[ED]]] {
     override def getKey(data: Array[Edge[ED]], pos: Int): Edge[ED] = {
       data(pos)
     }

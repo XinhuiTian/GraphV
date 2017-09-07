@@ -176,4 +176,18 @@ class OpenHashSetSuite extends SparkFunSuite with Matchers {
     assert(set.size === 1000)
     assert(set.capacity > 1000)
   }
+
+  test("remove") {
+    val set = new OpenHashSet[Long]
+    for (i <- Array(1, 11, 21, 31, 41, 51, 61, 71, 81, 91)) {
+      set.add(i)
+    }
+
+    for (i <- Array(1, 11, 21, 31, 41, 51, 61, 71, 81, 91)) {
+      println(i)
+      set.removeElem(i.toLong)
+      set.add(i + 1)
+    }
+
+  }
 }

@@ -19,21 +19,21 @@ package org.apache.spark.graphxp.impl
 
 import scala.reflect.ClassTag
 
-import org.apache.spark.{graphxp, _}
+import org.apache.spark._
 
-import org.apache.spark.graphx._
+import org.apache.spark.graphxp._
 import org.apache.spark.rdd._
 import org.apache.spark.storage.StorageLevel
 
-class VertexRDDImpl[VD] private[graphx] (
+class VertexRDDImpl[VD] private[graphxp] (
     @transient val partitionsRDD: RDD[ShippableVertexPartition[VD]],
     val targetStorageLevel: StorageLevel = StorageLevel.MEMORY_ONLY)
   (implicit override protected val vdTag: ClassTag[VD])
-  extends graphxp.VertexRDD[VD](partitionsRDD.context, List(new OneToOneDependency(partitionsRDD))) {
+  extends VertexRDD[VD](partitionsRDD.context, List(new OneToOneDependency(partitionsRDD))) {
 
   require(partitionsRDD.partitioner.isDefined)
 
-  override def reindex(): graphxp.VertexRDD[VD] = this.withPartitionsRDD(partitionsRDD.map(_.reindex()))
+  // override def reindex(): graphxp.VertexRDD[VD] = this.withPartitionsRDD(partitionsRDD.map(_.reindex()))
 
   override val partitioner = partitionsRDD.partitioner
 
@@ -93,7 +93,7 @@ class VertexRDDImpl[VD] private[graphx] (
     partitionsRDD.map(_.size.toLong).reduce(_ + _)
   }
 
-  override private[graphx] def mapVertexPartitions[VD2: ClassTag](
+  override private[graphxp] def mapVertexPartitions[VD2: ClassTag](
       f: ShippableVertexPartition[VD] => ShippableVertexPartition[VD2])
     : graphxp.VertexRDD[VD2] = {
     val newPartitionsRDD = partitionsRDD.mapPartitions(_.map(f), preservesPartitioning = true)
@@ -227,36 +227,38 @@ class VertexRDDImpl[VD] private[graphx] (
     this.withPartitionsRDD[VD2](parts)
   }
 
+  /*
   override def reverseRoutingTables(): graphxp.VertexRDD[VD] =
     this.mapVertexPartitions(vPart => vPart.withRoutingTable(vPart.routingTable.reverse))
+    */
 
-  override def withEdges(edges: graphxp.EdgeRDD[_]): graphxp.VertexRDD[VD] = {
-    val routingTables = graphxp.VertexRDD.createRoutingTables(edges, this.partitioner.get)
+  override def withEdges(edges: EdgeRDD[_]): VertexRDD[VD] = {
+    val routingTables = graphxp.VertexRDD.createLocalRoutingTables(edges, this.partitioner.get)
     val vertexPartitions = partitionsRDD.zipPartitions(routingTables, true) {
       (partIter, routingTableIter) =>
         val routingTable =
-          if (routingTableIter.hasNext) routingTableIter.next() else RoutingTablePartition.empty
+          if (routingTableIter.hasNext) routingTableIter.next() else LocalRoutingTablePartition.empty
         partIter.map(_.withRoutingTable(routingTable))
     }
     this.withPartitionsRDD(vertexPartitions)
   }
 
-  override private[graphx] def withPartitionsRDD[VD2: ClassTag](
+  override private[graphxp] def withPartitionsRDD[VD2: ClassTag](
       partitionsRDD: RDD[ShippableVertexPartition[VD2]]): graphxp.VertexRDD[VD2] = {
     new VertexRDDImpl(partitionsRDD, this.targetStorageLevel)
   }
 
-  override private[graphx] def withTargetStorageLevel(
+  override private[graphxp] def withTargetStorageLevel(
       targetStorageLevel: StorageLevel): graphxp.VertexRDD[VD] = {
     new VertexRDDImpl(this.partitionsRDD, targetStorageLevel)
   }
 
-  override private[graphx] def shipVertexAttributes(
+  override private[graphxp] def shipVertexAttributes(
       shipSrc: Boolean, shipDst: Boolean): RDD[(PartitionID, VertexAttributeBlock[VD])] = {
     partitionsRDD.mapPartitions(_.flatMap(_.shipVertexAttributes(shipSrc, shipDst)))
   }
 
-  override private[graphx] def shipVertexIds(): RDD[(PartitionID, Array[VertexId])] = {
+  override private[graphxp] def shipVertexIds(): RDD[(PartitionID, Array[Int])] = {
     partitionsRDD.mapPartitions(_.flatMap(_.shipVertexIds()))
   }
 

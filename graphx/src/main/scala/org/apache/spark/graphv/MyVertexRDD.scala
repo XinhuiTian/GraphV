@@ -19,6 +19,9 @@ package org.apache.spark.graphv
 import scala.reflect.ClassTag
 
 import org.apache.spark._
+
+import org.apache.spark.graphx.EdgeRDD
+import org.apache.spark.graphx.impl.EdgeRDDImpl
 import org.apache.spark.rdd.RDD
 import org.apache.spark.storage.StorageLevel
 
@@ -29,6 +32,8 @@ abstract class MyVertexRDD[VD, ED](
     sc: SparkContext,
     deps: Seq[Dependency[_]]) extends RDD[(VertexId, VD)](sc, deps) {
 
+  // implicit protected def vdTag: ClassTag[VD]
+
   private[graphv] def getActiveNums: Long
 
   private[graphv] def partitionsRDD: RDD[MyVertexPartition[VD, ED]]
@@ -38,12 +43,15 @@ abstract class MyVertexRDD[VD, ED](
   override protected def getPartitions: Array[Partition] = partitionsRDD.partitions
 
   override def compute(part: Partition, context: TaskContext): Iterator[(VertexId, VD)] = {
-    val p = firstParent [MyVertexPartition[VD, _]].iterator (part, context)
+    firstParent [MyVertexPartition[VD, _]].iterator (part, context).next().iterator
+    /*
+    val p = firstParent [MyVertexPartition[VD, _]].iterator (part, context).next().iterator
     if (p.hasNext) {
       p.next ().iterator.map (_.copy ())
     } else {
       Iterator.empty
     }
+    */
   }
 
   def apply[VD: ClassTag](vertices: RDD[(VertexId, VD)]) = {
@@ -53,7 +61,7 @@ abstract class MyVertexRDD[VD, ED](
     }
   }
 
-  def mapEdgePartitions[VD2: ClassTag, ED2: ClassTag](
+  private[graphv] def mapEdgePartitions[VD2: ClassTag, ED2: ClassTag](
       f: (MyVertexPartition[VD, ED]) => MyVertexPartition[VD2, ED2]): MyVertexRDDImpl[VD2, ED2]
 
   def leftJoin[VD2: ClassTag, VD3: ClassTag]
@@ -77,8 +85,8 @@ abstract class MyVertexRDD[VD, ED](
 
   def foreachEdge(f: (VertexId, ED) => Unit): Unit
 
-  def mapVertexPartitions[VD2: ClassTag](
-      f: (VertexId, VD) => VD2)
+  private[graphv] def mapVertexPartitions[VD2: ClassTag](
+      f: MyVertexPartition[VD, ED] => MyVertexPartition[VD2, ED])
   : MyVertexRDD[VD2, ED]
 
 
@@ -94,6 +102,8 @@ abstract class MyVertexRDD[VD, ED](
 
   def aggregateLocalUsingIndex[VD2: ClassTag](
       messages: RDD[AllMsgs[VD2]], reduceFunc: (VD2, VD2) => VD2): MyLocalVertexMessage[VD2]
+
+  def toEdgeRDD: EdgeRDDImpl[ED, VD]
 }
 
 object MyVertexRDD {

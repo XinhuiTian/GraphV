@@ -36,7 +36,7 @@ public abstract class RpcHandler {
    * Receive a single RPC message. Any exception thrown while in this method will be sent back to
    * the client in string form as a standard RPC failure.
    *
-   * This method will not be called in parallel for a single TransportClient (i.e., channel).
+   * This method will not be callRpced in parallel for a single TransportClient (i.e., channel).
    *
    * @param client A channel client which enables the handler to make requests back to the sender
    *               of this RPC. This will always be the exact same object for a particular channel.

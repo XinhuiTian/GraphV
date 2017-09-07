@@ -22,7 +22,7 @@ import scala.reflect.ClassTag
 
 import org.apache.spark._
 
-import org.apache.spark.graphx.impl.EdgePartitionBuilder
+import org.apache.spark.graphxp.impl.EdgePartitionBuilder
 import org.apache.spark.graphxp.util.collection
 import org.apache.spark.rdd.RDD
 import org.apache.spark.storage.StorageLevel
@@ -38,7 +38,7 @@ abstract class EdgeRDD[ED](
     deps: Seq[Dependency[_]]) extends RDD[Edge[ED]](sc, deps) {
 
   // scalastyle:off structural.type
-  private[graphx] def partitionsRDD: RDD[(PartitionID, impl.EdgePartition[ED, VD])] forSome { type VD }
+  private[graphxp] def partitionsRDD: RDD[(PartitionID, impl.EdgePartition[ED, VD])] forSome { type VD }
   // scalastyle:on structural.type
 
   override protected def getPartitions: Array[Partition] = partitionsRDD.partitions
@@ -120,7 +120,7 @@ abstract class EdgeRDD[ED](
     }
   }
 
-  def getOutDegreeCounts: RDD[(Int, Iterator[(VertexId, Int)])] = {
+  def getOutDegreeCounts: RDD[(Int, Iterator[(Int, Int)])] = {
     partitionsRDD.map(iter => (iter._1, iter._2.countingOutEdges))
   }
 
@@ -131,7 +131,7 @@ abstract class EdgeRDD[ED](
    * This does not actually trigger a cache; to do this, call
    * [[EdgeRDD#cache]] on the returned EdgeRDD.
    */
-  private[graphx] def withTargetStorageLevel(targetStorageLevel: StorageLevel): EdgeRDD[ED]
+  private[graphxp] def withTargetStorageLevel(targetStorageLevel: StorageLevel): EdgeRDD[ED]
 }
 
 object EdgeRDD {
@@ -158,7 +158,7 @@ object EdgeRDD {
    * @tparam ED the edge attribute type
    * @tparam VD the type of the vertex attributes that may be joined with the returned EdgeRDD
    */
-  private[graphx] def fromEdgePartitions[ED: ClassTag, VD: ClassTag](
+  private[graphxp] def fromEdgePartitions[ED: ClassTag, VD: ClassTag](
       edgePartitions: RDD[(Int, impl.EdgePartition[ED, VD])]): impl.EdgeRDDImpl[ED, VD] = {
     new impl.EdgeRDDImpl(edgePartitions)
   }

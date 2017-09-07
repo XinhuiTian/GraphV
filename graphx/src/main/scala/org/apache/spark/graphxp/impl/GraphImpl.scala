@@ -26,24 +26,26 @@ import scala.reflect.{classTag, ClassTag}
 
 import org.apache.spark.{graphxp, HashPartitioner}
 
-import org.apache.spark.graphx._
-import org.apache.spark.graphx.impl.GraphImpl._
-import org.apache.spark.graphx.util.BytecodeUtils
+import org.apache.spark.graphx.TripletFields
+import org.apache.spark.graphxp._
+import org.apache.spark.graphxp.impl.GraphImpl._
+import org.apache.spark.graphxp.util.BytecodeUtils
+import org.apache.spark.graphx.impl.EdgeActiveness
 import org.apache.spark.rdd.RDD
 import org.apache.spark.storage.{StorageLevel, TestBlockId}
 import org.apache.spark.util.collection.{OpenHashSet, PrimitiveVector}
 
 /**
- * An implementation of [[graphxp.Graph]] to support computation on graphs.
+ * An implementation of [[org.apache.spark.graphxp.Graph]] to support computation on graphs.
  *
  * Graphs are represented using two RDDs: `vertices`, which contains vertex attributes and the
  * routing information for shipping vertex attributes to edge partitions, and
  * `replicatedVertexView`, which contains edges and the vertex attributes mentioned by each edge.
  */
 class GraphImpl[VD: ClassTag, ED: ClassTag] protected (
-    @transient val vertices: graphxp.VertexRDD[VD],
+    @transient val vertices: VertexRDD[VD],
     @transient val replicatedVertexView: ReplicatedVertexView[VD, ED])
-  extends graphxp.Graph[VD, ED] with Serializable {
+  extends Graph[VD, ED] with Serializable {
 
   /** Default constructor is provided to support serialization */
   protected def this() = this(null, null)
@@ -126,9 +128,11 @@ class GraphImpl[VD: ClassTag, ED: ClassTag] protected (
     GraphImpl.fromExistingRDDs(vertices.withEdges(newEdges), newEdges)
   }
 
-  override def reverse: graphxp.Graph[VD, ED] = {
+  /*
+  override def reverse: Graph[VD, ED] = {
     new GraphImpl(vertices.reverseRoutingTables(), replicatedVertexView.reverse())
   }
+  */
 
   override def mapVertices[VD2: ClassTag]
     (f: (VertexId, VD) => VD2)(implicit eq: VD =:= VD2 = null): graphxp.Graph[VD2, ED] = {
@@ -157,7 +161,7 @@ class GraphImpl[VD: ClassTag, ED: ClassTag] protected (
   }
 
   override def mapTriplets[ED2: ClassTag](
-      f: (PartitionID, Iterator[graphxp.EdgeTriplet[VD, ED]]) => Iterator[ED2],
+      f: (PartitionID, Iterator[EdgeTriplet[VD, ED]]) => Iterator[ED2],
       tripletFields: TripletFields): graphxp.Graph[VD, ED2] = {
     vertices.cache()
     replicatedVertexView.upgrade(vertices, tripletFields.useSrc, tripletFields.useDst)
@@ -226,52 +230,6 @@ class GraphImpl[VD: ClassTag, ED: ClassTag] protected (
 
     // Map and combine.
     startTime = System.currentTimeMillis()
-    /*
-    println("BlockManagerId: " + view.edges.sparkContext.env.blockManager.blockManagerId.host)
-    val blockManager = view.edges.sparkContext.env.blockManager
-    val blockId = new TestBlockId("123")
-    blockManager.putSingle(blockId, 123L, StorageLevel.MEMORY_ONLY)
-    */
-    /*
-    val preAgg = view.edges.partitionsRDD.mapPartitionsWithIndexAndLocalShuffle((pid, blockManager, iter) =>
-      iter.flatMap {
-      case (pid, edgePartition) =>
-        // Choose scan method
-        val activeFraction = edgePartition.numActives.getOrElse(0) / edgePartition.indexSize.toFloat
-        val aggMsgs = activeDirectionOpt match {
-          case Some(EdgeDirection.Both) =>
-            if (activeFraction < 0.8) {
-              edgePartition.aggregateMessagesIndexScan(sendMsg, mergeMsg, tripletFields,
-                EdgeActiveness.Both)
-            } else {
-              edgePartition.aggregateMessagesEdgeScan(sendMsg, mergeMsg, tripletFields,
-                EdgeActiveness.Both)
-            }
-          case Some(EdgeDirection.Either) =>
-            // TODO: Because we only have a clustered index on the source vertex ID, we can't filter
-            // the index here. Instead we have to scan all edges and then do the filter.
-            edgePartition.aggregateMessagesEdgeScan(sendMsg, mergeMsg, tripletFields,
-              EdgeActiveness.Either)
-          case Some(EdgeDirection.Out) =>
-            if (activeFraction < 0.8) {
-              edgePartition.aggregateMessagesIndexScan(sendMsg, mergeMsg, tripletFields,
-                EdgeActiveness.SrcOnly)
-            } else {
-              edgePartition.aggregateMessagesEdgeScan(sendMsg, mergeMsg, tripletFields,
-                EdgeActiveness.SrcOnly)
-            }
-          case Some(EdgeDirection.In) =>
-            edgePartition.aggregateMessagesEdgeScan(sendMsg, mergeMsg, tripletFields,
-              EdgeActiveness.DstOnly)
-          case _ => // None
-            edgePartition.aggregateMessagesEdgeScan(sendMsg, mergeMsg, tripletFields,
-              EdgeActiveness.Neither)
-        }
-
-
-        aggMsgs
-    }).setName("GraphImpl.aggregateMessages - preAgg") */
-    // preAgg.count()
 
     val executorCores = 12
     val slaves = vertices.sparkContext.getExecutorIds().size
@@ -310,65 +268,11 @@ class GraphImpl[VD: ClassTag, ED: ClassTag] protected (
                 EdgeActiveness.Neither)
           }
           preAggMsgs
-          /*
-          val executor = blockManager.blockManagerId.host
-          val newPartitioner = new HashPartitioner(executorCores)
-          val realId = (pid % numPartitions) / slaves
-          val data = Array.fill(executorCores)(new PrimitiveVector[(VertexId, A)])
-          preAggMsgs.foreach { msg =>
-            val part = newPartitioner.getPartition(msg._1)
-            data(part) += msg
-          }
-
-          for (i <- 0 until executorCores) {
-            val blockId = new TestBlockId(s"${executor}_${realId}_$i")
-
-            blockManager.putIterator(blockId, data(i).iterator, level = StorageLevel.MEMORY_ONLY)
-              // println("Put block successfully: " + blockId)
-          }
-          Iterator((pid, executor))
-          */
     }).setName("GraphImpl.aggregateMessages - preAgg")
-    // val tmpAgg = preAgg.forcePartitionBy(new HashPartitioner(numPartitions))
-    // println("preAgg msgs: " + preAgg.count())
-    // endTime = System.currentTimeMillis()
-    // println("PreAgg: " + (endTime - startTime))
-    // TXH added
 
-    // println("Slaves " + slaves)
-    // println("local agg msgs: " + localAgg.count)
-
-    /*
-    val localAgg = preAgg.
-      mapPartitionsWithIndexAndLocalShuffle { (pid, blockManager, iter) =>
-      val executor = blockManager.blockManagerId.host
-
-
-      val results = new GraphXPrimitiveKeyOpenHashMap[VertexId, A]
-      //
-      val realId = (pid % numPartitions) / slaves
-      // println("Get Pid: " + pid + " " + executorCores)
-      for (i <- 0 until executorCores) {
-        // println("i: " + i)
-        val blockId = new TestBlockId(s"${executor}_${i}_$realId")
-        // println("Get block: " + blockId)
-
-        // println("block status: " + blockManager.getStatus(blockId).get.memSize)
-        blockManager.getLocalValues (blockId) match {
-          case Some (blockResult) =>
-            val msgBlock = blockResult.data.asInstanceOf [Iterator[(VertexId, A)]]
-            //
-            // println("Get block: " + msgBlock.size)
-            msgBlock.foreach { msg => results.changeValue(msg._1, msg._2, v => mergeMsg(v, msg._2))}
-            // blockManager.releaseLock(blockId)
-            blockManager.removeBlock(blockId)
-          case _ => throw new NotImplementedError ("Should not reach here " + blockId)
-        }
-      }
-      results.iterator
-    }
-    */
-
+    // preAgg.count()
+    // println("PreAgg")
+    // preAgg.foreach(println)
 
     // do the final reduction reusing the index map
     startTime = System.currentTimeMillis()
@@ -396,20 +300,20 @@ class GraphImpl[VD: ClassTag, ED: ClassTag] protected (
       // updateF preserves type, so we can use incremental replication
       val st1 = System.currentTimeMillis()
       val newVerts = vertices.leftJoin(other)(updateF).cache()
-      newVerts.count()
-      val et1 = System.currentTimeMillis()
-      println("get newVerts: " + (et1 - st1))
-      val st2 = System.currentTimeMillis()
+      // newVerts.count()
+      // val et1 = System.currentTimeMillis()
+      // println("get newVerts: " + (et1 - st1))
+      // val st2 = System.currentTimeMillis()
       val changedVerts = vertices.asInstanceOf[graphxp.VertexRDD[VD2]].diff(newVerts).cache()
-      changedVerts.count()
-      val et2 = System.currentTimeMillis()
-      println("get changedVerts: " + (et2 - st2))
-      val st3 = System.currentTimeMillis()
+      // changedVerts.count()
+      // val et2 = System.currentTimeMillis()
+      // println("get changedVerts: " + (et2 - st2))
+      // val st3 = System.currentTimeMillis()
       val newReplicatedVertexView = replicatedVertexView.asInstanceOf[ReplicatedVertexView[VD2, ED]]
         .updateVertices(changedVerts)
-      newReplicatedVertexView.edges.count()
-      val et3 = System.currentTimeMillis()
-      println("updateVertices: " + (et3 - st3))
+      // newReplicatedVertexView.edges.count()
+      // val et3 = System.currentTimeMillis()
+      // println("updateVertices: " + (et3 - st3))
       new GraphImpl(newVerts, newReplicatedVertexView)
     } else {
       // updateF does not preserve type, so we must re-replicate all vertices
@@ -502,7 +406,7 @@ object GraphImpl {
       defaultVertexAttr: VD,
       edgeStorageLevel: StorageLevel,
       vertexStorageLevel: StorageLevel): GraphImpl[VD, ED] = {
-    fromEdgeRDD(graphxp.EdgeRDD.fromEdges(edges), defaultVertexAttr, edgeStorageLevel, vertexStorageLevel)
+    fromEdgeRDD(EdgeRDD.fromEdges(edges), defaultVertexAttr, edgeStorageLevel, vertexStorageLevel)
   }
 
   /** Create a graph from EdgePartitions, setting referenced vertices to `defaultVertexAttr`. */
@@ -511,20 +415,20 @@ object GraphImpl {
       defaultVertexAttr: VD,
       edgeStorageLevel: StorageLevel,
       vertexStorageLevel: StorageLevel): GraphImpl[VD, ED] = {
-    fromEdgeRDD(graphxp.EdgeRDD.fromEdgePartitions(edgePartitions), defaultVertexAttr, edgeStorageLevel,
+    fromEdgeRDD(EdgeRDD.fromEdgePartitions(edgePartitions), defaultVertexAttr, edgeStorageLevel,
       vertexStorageLevel)
   }
 
   /** Create a graph from vertices and edges, setting missing vertices to `defaultVertexAttr`. */
   def apply[VD: ClassTag, ED: ClassTag](
       vertices: RDD[(VertexId, VD)],
-      edges: RDD[graphxp.Edge[ED]],
+      edges: RDD[Edge[ED]],
       defaultVertexAttr: VD,
       edgeStorageLevel: StorageLevel,
       vertexStorageLevel: StorageLevel): GraphImpl[VD, ED] = {
-    val edgeRDD = graphxp.EdgeRDD.fromEdges(edges)(classTag[ED], classTag[VD])
+    val edgeRDD = EdgeRDD.fromEdges(edges)(classTag[ED], classTag[VD])
       .withTargetStorageLevel(edgeStorageLevel)
-    val vertexRDD = graphxp.VertexRDD(vertices, edgeRDD, defaultVertexAttr)
+    val vertexRDD = VertexRDD(vertices, edgeRDD, defaultVertexAttr)
       .withTargetStorageLevel(vertexStorageLevel)
     GraphImpl(vertexRDD, edgeRDD)
   }
@@ -570,11 +474,13 @@ object GraphImpl {
       vertexStorageLevel: StorageLevel): GraphImpl[VD, ED] = {
     val edgesCached = edges.withTargetStorageLevel(edgeStorageLevel).cache()
     val vertices =
-      graphxp.VertexRDD.fromEdges(edgesCached, edgesCached.partitions.length, defaultVertexAttr)
+      VertexRDD.fromEdges(edgesCached, edgesCached.partitions.length, defaultVertexAttr)
       .withTargetStorageLevel(vertexStorageLevel)
+
+    // vertices.foreachPartition{ iter => iter.foreach(v => print(v + " ")); println }
+
     fromExistingRDDs(vertices, edgesCached)
   }
 
   def computeGcTime(): Long = ManagementFactory.getGarbageCollectorMXBeans.asScala.map(_.getCollectionTime).sum
-
 } // end of object GraphImpl

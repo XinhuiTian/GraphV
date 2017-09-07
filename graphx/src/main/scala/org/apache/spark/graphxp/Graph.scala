@@ -20,6 +20,8 @@ package org.apache.spark.graphxp
 import scala.language.implicitConversions
 import scala.reflect.ClassTag
 
+import org.apache.spark.graphx.TripletFields
+import org.apache.spark.graphxp.impl.GraphImpl
 import org.apache.spark.rdd.RDD
 import org.apache.spark.storage.StorageLevel
 
@@ -291,7 +293,7 @@ abstract class Graph[VD: ClassTag, ED: ClassTag] protected () extends Serializab
    * Reverses all edges in the graph.  If this graph contains an edge from a to b then the returned
    * graph contains an edge from b to a.
    */
-  def reverse: Graph[VD, ED]
+  // def reverse: Graph[VD, ED]
 
   /**
    * Restricts the graph to only the vertices and edges satisfying the predicates. The resulting
@@ -403,7 +405,7 @@ abstract class Graph[VD: ClassTag, ED: ClassTag] protected () extends Serializab
    *   will be run on edges with *both* vertices in the active set. The active set must have the
    *   same index as the graph's vertices.
    */
-  private[graphx] def aggregateMessagesWithActiveSet[A: ClassTag](
+  private[graphxp] def aggregateMessagesWithActiveSet[A: ClassTag](
       sendMsg: EdgeContext[VD, ED, A] => Unit,
       mergeMsg: (A, A) => A,
       tripletFields: TripletFields,
@@ -475,7 +477,7 @@ object Graph {
       vertexStorageLevel: StorageLevel = StorageLevel.MEMORY_ONLY): Graph[VD, Int] =
   {
     val edges = rawEdges.map(p => Edge(p._1, p._2, 1))
-    val graph = impl.GraphImpl(edges, defaultValue, edgeStorageLevel, vertexStorageLevel)
+    val graph = GraphImpl(edges, defaultValue, edgeStorageLevel, vertexStorageLevel)
     uniqueEdges match {
       case Some(p) => graph.partitionBy(p).groupEdges((a, b) => a + b)
       case None => graph

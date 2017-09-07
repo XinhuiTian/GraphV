@@ -21,14 +21,14 @@ import scala.reflect.{classTag, ClassTag}
 
 import org.apache.spark.{graphxp, HashPartitioner, OneToOneDependency}
 
-import org.apache.spark.graphx._
+import org.apache.spark.graphxp._
 import org.apache.spark.rdd.RDD
 import org.apache.spark.storage.StorageLevel
 
-class EdgeRDDImpl[ED: ClassTag, VD: ClassTag] private[graphx] (
+class EdgeRDDImpl[ED: ClassTag, VD: ClassTag] private[graphxp] (
     @transient override val partitionsRDD: RDD[(PartitionID, EdgePartition[ED, VD])],
     val targetStorageLevel: StorageLevel = StorageLevel.MEMORY_ONLY)
-  extends graphxp.EdgeRDD[ED](partitionsRDD.context, List(new OneToOneDependency(partitionsRDD))) {
+  extends EdgeRDD[ED](partitionsRDD.context, List(new OneToOneDependency(partitionsRDD))) {
 
   override def setName(_name: String): this.type = {
     if (partitionsRDD.name != null) {
@@ -48,7 +48,7 @@ class EdgeRDDImpl[ED: ClassTag, VD: ClassTag] private[graphx] (
   override val partitioner =
     partitionsRDD.partitioner.orElse(Some(new HashPartitioner(partitions.length)))
 
-  override def collect(): Array[graphxp.Edge[ED]] = this.map(_.copy()).collect()
+  override def collect(): Array[Edge[ED]] = this.map(_.copy()).collect()
 
   /**
    * Persists the edge partitions at the specified storage level, ignoring any existing target
@@ -125,12 +125,12 @@ class EdgeRDDImpl[ED: ClassTag, VD: ClassTag] private[graphx] (
     }, preservesPartitioning = true))
   }
 
-  private[graphx] def withPartitionsRDD[ED2: ClassTag, VD2: ClassTag](
+  private[graphxp] def withPartitionsRDD[ED2: ClassTag, VD2: ClassTag](
       partitionsRDD: RDD[(PartitionID, EdgePartition[ED2, VD2])]): EdgeRDDImpl[ED2, VD2] = {
     new EdgeRDDImpl(partitionsRDD, this.targetStorageLevel)
   }
 
-  override private[graphx] def withTargetStorageLevel(
+  override private[graphxp] def withTargetStorageLevel(
       targetStorageLevel: StorageLevel): EdgeRDDImpl[ED, VD] = {
     new EdgeRDDImpl(this.partitionsRDD, targetStorageLevel)
   }

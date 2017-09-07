@@ -20,13 +20,12 @@ package org.apache.spark.graphx
 import scala.language.existentials
 import scala.reflect.ClassTag
 
-import org.apache.spark.Dependency
-import org.apache.spark.Partition
-import org.apache.spark.SparkContext
-import org.apache.spark.TaskContext
+import org.apache.spark._
+
 import org.apache.spark.graphx.impl.EdgePartition
 import org.apache.spark.graphx.impl.EdgePartitionBuilder
 import org.apache.spark.graphx.impl.EdgeRDDImpl
+import org.apache.spark.graphx.util.collection.GraphXPrimitiveKeyOpenHashMap
 import org.apache.spark.rdd.RDD
 import org.apache.spark.storage.StorageLevel
 
@@ -83,6 +82,51 @@ abstract class EdgeRDD[ED](
   def innerJoin[ED2: ClassTag, ED3: ClassTag]
       (other: EdgeRDD[ED2])
       (f: (VertexId, VertexId, ED, ED2) => ED3): EdgeRDD[ED3]
+
+  /*
+  def getInDegreeCounts: RDD[(Int, Iterator[(VertexId, Int)])] = {
+    partitionsRDD.map(iter => (iter._1, iter._2.countingInEdges))
+  }
+
+  def maxInDegreeCounts: RDD[(VertexId, Int)] = {
+    val indegrees = getInDegreeCounts.mapPartitions { partIter =>
+      val part = partIter.next()
+      part._2
+    }.partitionBy(new HashPartitioner(getNumPartitions))
+
+    indegrees.mapPartitions { partIter =>
+      val maxInDegrees = new GraphXPrimitiveKeyOpenHashMap[VertexId, Int]
+      partIter.foreach { inDegree =>
+        maxInDegrees.changeValue(inDegree._1, inDegree._2,
+          { v :Int => if (inDegree._2 > v) inDegree._2 else v })
+
+      }
+      maxInDegrees.iterator
+    }
+  }
+
+  def maxOutDegreeCounts: RDD[(VertexId, Int)] = {
+    val outdegrees = getOutDegreeCounts.mapPartitions { partIter =>
+      val part = partIter.next()
+      part._2
+    }.partitionBy(new HashPartitioner(getNumPartitions))
+
+    // outdegrees.foreach(println)
+
+    outdegrees.mapPartitions { partIter =>
+      val maxOutDegrees = new GraphXPrimitiveKeyOpenHashMap[VertexId, Int]
+      partIter.foreach { outDegree =>
+        maxOutDegrees.changeValue(outDegree._1, outDegree._2,
+        { v :Int => if (outDegree._2 > v) outDegree._2 else v })
+      }
+      maxOutDegrees.iterator
+    }
+  }
+
+  def getOutDegreeCounts: RDD[(Int, Iterator[(VertexId, Int)])] = {
+    partitionsRDD.map(iter => (iter._1, iter._2.countingOutEdges))
+  }
+  */
 
   /**
    * Changes the target storage level while preserving all other properties of the

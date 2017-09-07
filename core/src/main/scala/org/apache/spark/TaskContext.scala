@@ -24,6 +24,7 @@ import org.apache.spark.annotation.DeveloperApi
 import org.apache.spark.executor.TaskMetrics
 import org.apache.spark.memory.TaskMemoryManager
 import org.apache.spark.metrics.source.Source
+import org.apache.spark.storage.BlockManager
 import org.apache.spark.util.{AccumulatorV2, TaskCompletionListener, TaskFailureListener}
 
 
@@ -84,6 +85,15 @@ abstract class TaskContext extends Serializable {
   // Note: Update JavaTaskContextCompileCheck when new methods are added to this class.
 
   // Note: getters in this class are defined with parentheses to maintain backward compatibility.
+
+  // TXH added
+  private var blockManager: BlockManager = null
+
+  def setBlockManager(blockManager: BlockManager): Unit = {
+    this.blockManager = blockManager
+  }
+
+  def getBlockManager(): BlockManager = blockManager
 
   /**
    * Returns true if the task has completed.

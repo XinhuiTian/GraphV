@@ -18,13 +18,13 @@
 package org.apache.spark.graphxpp.impl
 
 // scalastyle:off println
-
 import scala.collection.immutable.IndexedSeq
 import scala.reflect.ClassTag
 
+import org.apache.spark.HashPartitioner
+
 import org.apache.spark.graphxpp._
 import org.apache.spark.graphxpp.EdgeActiveness.EdgeActiveness
-import org.apache.spark.graphxpp.collection.PrimitiveKeyOpenHashMap
 import org.apache.spark.graphxpp.utils.collection.GraphXPrimitiveKeyOpenHashMap
 import org.apache.spark.util.collection.{BitSet, OpenHashSet, PrimitiveVector}
 
@@ -51,13 +51,14 @@ case class AllMsgs[A: ClassTag](localMasterMsgs: Iterator[(VertexId, A)],
   globalMirrorMsgs: Iterator[(PartitionID, (VertexId, A))])
 
 // record the raw data of edges, convenient for later partition
-case class SimpleEdgePartition[ED: ClassTag](edges: Array[Edge[ED]])
+case class SimpleEdgePartition[ED: ClassTag](edges: Array[Edge[ED]]) {
+
+}
 
 case class SimpleEdgeWithVertexPartition[ED: ClassTag]
-(edges: OpenHashSet[Edge[ED]],
-  masters: PrimitiveKeyOpenHashMap[VertexId, Byte],
-  inRoutingTable: Array[Array[VertexId]],
-  outRoutingTable: Array[Array[VertexId]])
+(edges: Array[(Edge[ED], Byte)],
+  masters: Array[(VertexId, Byte)],
+  routingTable: RoutingTablePartition)
 
 // TODO: using a bitmap to record the mirrors of each master
 private[graphxpp]
@@ -69,7 +70,6 @@ class EdgePartition[
   index: GraphXPrimitiveKeyOpenHashMap[VertexId, Int],
   // masters: Array[Iterable[PartitionID]],
   masters: Array[Array[Int]],
-  mirrors: Array[PartitionID],
   global2local: GraphXPrimitiveKeyOpenHashMap[VertexId, Int],
   local2global: Array[VertexId],
   masterAttrs: Array[VD],
@@ -82,9 +82,11 @@ class EdgePartition[
 
   val edgeSize: Int = localSrcIds.size
 
-  def vertexSize: Int = local2global.length
+  val vertexSize: Int = local2global.length
 
-  def mastersSize: Int = vertexSize - mirrors.length
+  val mastersSize: Int = masterAttrs.length
+
+  val mirrorsSize: Int = mirrorAttrs.length
 
   def getMasters: Array[VertexId] = local2global.slice (0, mastersSize)
 
@@ -97,7 +99,7 @@ class EdgePartition[
   }
 
   def getMirrorsWithAttr: IndexedSeq[(VertexId, VD)] = {
-    (0 until mirrors.size).map (i => (local2global (i + mastersSize), mirrorAttrs (i)))
+    (0 until mirrorsSize).map (i => (local2global (i + mastersSize), mirrorAttrs (i)))
   }
 
   def getLocalMastersWithAttr: Array[VD] = masterAttrs
@@ -181,7 +183,7 @@ class EdgePartition[
 
   // only used when the updated msg has the same type with current partition
   def updateVertices(iter: Iterator[(VertexId, VD)]): EdgePartition[ED, VD] = {
-    val newMirrorAttrs = new Array[VD](mirrors.size)
+    val newMirrorAttrs = new Array[VD](mirrorsSize)
     System.arraycopy (mirrorAttrs, 0, newMirrorAttrs, 0, mirrorAttrs.length)
 
     while (iter.hasNext) {
@@ -374,7 +376,7 @@ class EdgePartition[
       if (agg._1 >= mastersSize) {
         val globalMirror = local2global (agg._1)
         outMirrors += globalMirror
-        partIds += mirrors (agg._1 - mastersSize)
+        partIds += new HashPartitioner(numPartitions).getPartition(globalMirror)
         outMsgs += agg._2
       }
     }
@@ -448,7 +450,7 @@ class EdgePartition[
       // println("adding to activeSet")
       activeSet.add (iter.next ())
     }
-    new EdgePartition (localSrcIds, localDstIds, data, index, masters, mirrors,
+    new EdgePartition (localSrcIds, localDstIds, data, index, masters,
       global2local, local2global, masterAttrs, mirrorAttrs,
       masterMask, numPartitions, Some (activeSet))
   }
@@ -465,27 +467,27 @@ class EdgePartition[
     else {
     */
     // println("Not eq")
-    new EdgePartition (localSrcIds, localDstIds, data, index, masters, mirrors,
-      global2local, local2global, newMasterAttrs, new Array[VD2](mirrors.size),
+    new EdgePartition (localSrcIds, localDstIds, data, index, masters,
+      global2local, local2global, newMasterAttrs, new Array[VD2](mirrorsSize),
       masterMask, numPartitions, activeSet)
     // }
   }
 
   def withMirrorAttrs(newMirrorAttrs: Array[VD]): EdgePartition[ED, VD] = {
-    new EdgePartition (localSrcIds, localDstIds, data, index, masters, mirrors,
+    new EdgePartition (localSrcIds, localDstIds, data, index, masters,
       global2local, local2global, masterAttrs, newMirrorAttrs,
       masterMask, numPartitions, activeSet)
   }
 
   /** Return a new `EdgePartition` with the specified edge data. */
   def withData[ED2: ClassTag](newData: Array[ED2]): EdgePartition[ED2, VD] = {
-    new EdgePartition (localSrcIds, localDstIds, newData, index, masters, mirrors,
+    new EdgePartition (localSrcIds, localDstIds, newData, index, masters,
       global2local, local2global, masterAttrs, mirrorAttrs,
       masterMask, numPartitions, activeSet)
   }
 
   def withMask(newMask: BitSet): EdgePartition[ED, VD] = {
-    new EdgePartition (localSrcIds, localDstIds, data, index, masters, mirrors,
+    new EdgePartition (localSrcIds, localDstIds, data, index, masters,
       global2local, local2global, masterAttrs, mirrorAttrs,
       newMask, numPartitions, activeSet)
   }
@@ -575,4 +577,5 @@ private class AggregatingEdgeContext[VD, ED, A](
     }
   }
 }
+
 

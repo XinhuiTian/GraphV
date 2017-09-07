@@ -20,7 +20,7 @@ package org.apache.spark.graphv
 import scala.language.implicitConversions
 import scala.reflect.ClassTag
 
-import org.apache.spark.graphx.TripletFields
+import org.apache.spark.graphx.{Graph, TripletFields}
 import org.apache.spark.rdd.RDD
 import org.apache.spark.storage.StorageLevel
 
@@ -119,6 +119,9 @@ abstract class MyGraph[VD: ClassTag, ED: ClassTag] protected() extends Serializa
   (other: RDD[(VertexId, U)])
     (updateF: (VertexId, VD, Option[U]) => VD2)
     (implicit eq: VD =:= VD2 = null): MyGraph[VD2, ED]
+
+  // added by txh in 7.30 2017
+  def toGraphX: Graph[VD, ED]
 
   //  def outerJoinVertices[U: ClassTag, VD2: ClassTag]
   //  (other: RDD[(VertexId, U)])

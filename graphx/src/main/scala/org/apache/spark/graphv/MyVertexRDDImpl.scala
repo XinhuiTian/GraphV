@@ -20,8 +20,12 @@ import scala.reflect.ClassTag
 
 import org.apache.spark.{HashPartitioner, OneToOneDependency}
 
+import org.apache.spark.graphx.EdgeRDD
+import org.apache.spark.graphx.impl.{EdgePartition, EdgeRDDImpl}
+import org.apache.spark.graphx.util.collection.GraphXPrimitiveKeyOpenHashMap
 import org.apache.spark.rdd.RDD
 import org.apache.spark.storage.StorageLevel
+import org.apache.spark.util.collection.PrimitiveVector
 
 /**
  * Created by sunny on 4/26/16.
@@ -29,8 +33,8 @@ import org.apache.spark.storage.StorageLevel
 class MyVertexRDDImpl[VD: ClassTag, ED: ClassTag] private[graphv]
 (@transient val partitionsRDD: RDD[MyVertexPartition[VD, ED]], val numPartitions: Int,
     val targetStorageLevel: StorageLevel = StorageLevel.MEMORY_ONLY)
-
-  extends MyVertexRDD[VD, ED](partitionsRDD.context, List (new OneToOneDependency (partitionsRDD))) {
+  extends MyVertexRDD[VD, ED](partitionsRDD.context,
+    List (new OneToOneDependency (partitionsRDD))) {
 
   override def getActiveNums: Long = partitionsRDD.mapPartitions { iter =>
     val part = iter.next()
@@ -45,7 +49,8 @@ class MyVertexRDDImpl[VD: ClassTag, ED: ClassTag] private[graphv]
    //  val localMsgs = messages.filter(_._2._2 == true).map(msg => (msg._1, msg._2._1))
    //  val remoteMsgs = messages.filter(_._2._2 == false).map(msg => (msg._1, msg._2._1))
     val shuffled = messages.partitionBy (new HashPartitioner (partitionsRDD.getNumPartitions)) //60ms  remove cache()
-    val parts = partitionsRDD.zipPartitions (shuffled, true) { (thisIter, msgIter) =>
+    val parts = partitionsRDD.zipPartitions (shuffled, true) {
+      (thisIter, msgIter) =>
       thisIter.map (_.aggregateUsingIndex (msgIter, reduceFunc))
     } //add cache make it fast  important!!
 
@@ -68,7 +73,8 @@ class MyVertexRDDImpl[VD: ClassTag, ED: ClassTag] private[graphv]
     // shuffled.count()
     // println("Shuffle Time: " + (System.currentTimeMillis() - startTime))
     val midTime = System.currentTimeMillis()
-    val parts = partitionsRDD.zipPartitions (shuffled, localMsgs, true) { (thisIter, shuffleMsgIter, localMsgIter) =>
+    val parts = partitionsRDD.zipPartitions (shuffled, localMsgs, true) {
+      (thisIter, shuffleMsgIter, localMsgIter) =>
       thisIter.map (_.aggregateLocalUsingIndex (shuffleMsgIter, localMsgIter, reduceFunc))
     } //add cache make it fast  important!!
     // parts.count()
@@ -87,12 +93,14 @@ class MyVertexRDDImpl[VD: ClassTag, ED: ClassTag] private[graphv]
     new MyVertexRDDImpl (partitionsRDD, numPartitions, this.targetStorageLevel)
   }
 
-  override def withPartitionsRDD[VD2: ClassTag](partitionsRDD: RDD[MyShippableVertexPartition[VD2]]):
+  override def withPartitionsRDD[VD2: ClassTag](
+      partitionsRDD: RDD[MyShippableVertexPartition[VD2]]):
   MyVertexMessage[VD2] = {
     new MyVertexMessageImpl (partitionsRDD, this.targetStorageLevel)
   }
 
-  override def withPartitionsRDD[VD2: ClassTag](partitionsRDD: RDD[MyShippableLocalVertexPartition[VD2]]):
+  override def withPartitionsRDD[VD2: ClassTag](
+      partitionsRDD: RDD[MyShippableLocalVertexPartition[VD2]]):
   MyLocalVertexMessage[VD2] = {
     new MyLocalVertexMessageImpl (partitionsRDD, this.targetStorageLevel)
   }
@@ -191,10 +199,10 @@ class MyVertexRDDImpl[VD: ClassTag, ED: ClassTag] private[graphv]
   }
 
   override def mapVertexPartitions[VD2: ClassTag](
-      f: (VertexId, VD) => VD2)
+      f: MyVertexPartition[VD, ED] => MyVertexPartition[VD2, ED])
   : MyVertexRDD[VD2, ED] = {
-    val newPartitionsRDD = partitionsRDD.mapPartitions (_.flatMap (v => Iterator (v.map (f))), preservesPartitioning
-      = true)
+    val newPartitionsRDD = partitionsRDD.mapPartitions (_.map(f),
+      preservesPartitioning = true)
     this.withPartitionsRDD (newPartitionsRDD)
   }
 
@@ -211,5 +219,56 @@ class MyVertexRDDImpl[VD: ClassTag, ED: ClassTag] private[graphv]
   override def unpersist(blocking: Boolean = true): this.type = {
     partitionsRDD.unpersist(blocking)
     this
+  }
+
+  override def toEdgeRDD: EdgeRDDImpl[ED, VD] = {
+    val edges: RDD[(Int, EdgePartition[ED, VD])] = partitionsRDD
+      .mapPartitionsWithIndex{ (pid, partIter) =>
+      val vertPart = partIter.next()
+      val srcIndex = vertPart.vertexIds
+      val localDstIds = vertPart.localDstIds
+      val localSrcs = new PrimitiveVector[Int]
+
+      val vertIndex = new GraphXPrimitiveKeyOpenHashMap[VertexId, Int]
+
+      val local2global = vertPart.local2global
+      val global2local = vertPart.global2local
+
+      var pos = 0
+      while (pos < srcIndex.length) {
+        val srcId = pos
+        val (dstIndex, dstPos) = srcIndex(pos)
+        // println(s"get dstIndex and dstPos: $dstIndex, $dstPos")
+
+        var i = 0
+        while (i < dstPos) {
+          // val dstId = dstIds (dstIndex + i)
+          // println("dstId: " + local2global(pos))
+          localSrcs += pos
+
+          i += 1
+        }
+
+        vertIndex.update(local2global(pos), dstIndex)
+        pos += 1
+      }
+        val localSrcIds = localSrcs.trim.toArray
+
+/*
+      srcIndex.foreach { ids =>
+        vertIndex.update(local2global(ids._1), ids._2)
+      }
+      */
+
+      val activeSet = vertIndex.keySet
+
+      val edgePartition = new EdgePartition(localSrcIds,
+        localDstIds, vertPart.edgeAttrs, vertIndex, global2local,
+        local2global, new Array[VD](local2global.length), Some(activeSet))
+
+      Iterator((pid, edgePartition))
+    }
+
+    new EdgeRDDImpl(edges)
   }
 }

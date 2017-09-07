@@ -20,6 +20,7 @@ package org.apache.spark.graphx
 import scala.language.implicitConversions
 import scala.reflect.ClassTag
 
+import org.apache.spark.graphv.MyGraph
 import org.apache.spark.graphx.impl._
 import org.apache.spark.rdd.RDD
 import org.apache.spark.storage.StorageLevel
@@ -78,6 +79,8 @@ abstract class Graph[VD: ClassTag, ED: ClassTag] protected () extends Serializab
    * }}}
    */
   val triplets: RDD[EdgeTriplet[VD, ED]]
+
+  def upgrade: Graph[VD, ED]
 
   /**
    * Caches the vertices and edges associated with this graph at the specified storage level,
@@ -138,6 +141,11 @@ abstract class Graph[VD: ClassTag, ED: ClassTag] protected () extends Serializab
    */
   def partitionBy(partitionStrategy: PartitionStrategy): Graph[VD, ED]
 
+
+  def locAwarePartitionBy(partitionStrategy: PartitionStrategy): Graph[VD, ED]
+
+
+  def locAwarePartitionBy(partitionStrategy: PartitionStrategy, numPartitions: Int): Graph[VD, ED]
   /**
    * Repartitions the edges in the graph according to `partitionStrategy`.
    *
@@ -440,6 +448,13 @@ abstract class Graph[VD: ClassTag, ED: ClassTag] protected () extends Serializab
   def outerJoinVertices[U: ClassTag, VD2: ClassTag](other: RDD[(VertexId, U)])
       (mapFunc: (VertexId, VD, Option[U]) => VD2)(implicit eq: VD =:= VD2 = null)
     : Graph[VD2, ED]
+
+  // com vertices with non-zero degrees and vertices with zero degree
+  def inComRatio: (Double, Double)
+
+  def outComRatio: (Double, Double)
+
+  def toGraphV(): MyGraph[Int, Int]
 
   /**
    * The associated [[GraphOps]] object.

@@ -33,13 +33,29 @@ class GraphLoaderSuite extends SparkFunSuite with LocalSparkContext {
       val graphFile = new File(tmpDir.getAbsolutePath, "graph.txt")
       val writer = new OutputStreamWriter(new FileOutputStream(graphFile), StandardCharsets.UTF_8)
       for (i <- (1 until 101)) writer.write(s"$i 0\n")
+      // writer.write("3 1\n")
+      // writer.write("6 1\n")
+      // writer.write("6 4\n")
+      /* writer.write("1 6\n")
+      writer.write("4 1\n")
+      writer.write("4 2\n")
+      writer.write("2 1\n")
+      writer.write("5 2\n")
+      writer.write("5 1\n")
+      */
+
       writer.close()
       try {
-        // val graph = GraphLoader.edgeListFile(sc, tmpDir.getAbsolutePath)
+         val graph = GraphLoader.edgeListFile(sc, tmpDir.getAbsolutePath, numEdgePartitions = 10)
+           .partitionBy(PartitionStrategy.EdgePartition2D)
         val startTime = System.currentTimeMillis()
-        val graph = GraphLoader.edgeListFile(sc, "/Users/XinhuiTian/Downloads/roadNet-CA.txt", numEdgePartitions = 10).edges.count()
+        // val graph = GraphLoader.edgeListFile(sc, "/Users/XinhuiTian/Downloads/soc-Epinions1.txt", numEdgePartitions = 100)
+        //   .partitionBy(PartitionStrategy.EdgePartition2D)
         val period = System.currentTimeMillis() - startTime
         println("Loading Time: " + period)
+
+        println(graph.outComRatio)
+        println(graph.inComRatio)
 
         /*
         val neighborAttrSums = graph.aggregateMessages[Int](

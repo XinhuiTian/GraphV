@@ -58,6 +58,15 @@ class OpenHashSet[@specialized(Long, Int) T: ClassTag](
 
   def this() = this(64)
 
+  // added by TXH
+  def removeElem(elem: T) = {
+    val pos = getPos(elem)
+    // if (pos > 0) {
+      _bitset.unset(pos)
+      _size -= 1
+    // }
+  }
+
   // The following member variables are declared as protected instead of private for the
   // specialization to work (specialized class extends the non-specialized one and needs access
   // to the "private" variables).

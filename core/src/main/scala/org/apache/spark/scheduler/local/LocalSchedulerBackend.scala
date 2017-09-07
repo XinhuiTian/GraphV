@@ -59,6 +59,9 @@ private[spark] class LocalEndpoint(
   private val executor = new Executor(
     localExecutorId, localExecutorHostname, SparkEnv.get, userClassPath, isLocal = true)
 
+  // TXH added
+  def getExecutorId: String = localExecutorId
+
   override def receive: PartialFunction[Any, Unit] = {
     case ReviveOffers =>
       reviveOffers()
@@ -109,6 +112,9 @@ private[spark] class LocalSchedulerBackend(
     override def onStopRequest(): Unit = stop(SparkAppHandle.State.KILLED)
   }
 
+  // TXH added
+  private var executorId: String = null
+
   /**
    * Returns a list of URLs representing the user classpath.
    *
@@ -121,9 +127,13 @@ private[spark] class LocalSchedulerBackend(
 
   launcherBackend.connect()
 
+  // TXH add
+  def getExecutorId: String = SparkContext.DRIVER_IDENTIFIER
+
   override def start() {
     val rpcEnv = SparkEnv.get.rpcEnv
     val executorEndpoint = new LocalEndpoint(rpcEnv, userClassPath, scheduler, this, totalCores)
+    executorId = executorEndpoint.getExecutorId
     localEndpoint = rpcEnv.setupEndpoint("LocalSchedulerBackendEndpoint", executorEndpoint)
     listenerBus.post(SparkListenerExecutorAdded(
       System.currentTimeMillis,

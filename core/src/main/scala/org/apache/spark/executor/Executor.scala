@@ -30,13 +30,14 @@ import scala.collection.mutable.{ArrayBuffer, HashMap}
 import scala.util.control.NonFatal
 
 import org.apache.spark._
+
 import org.apache.spark.deploy.SparkHadoopUtil
 import org.apache.spark.internal.Logging
 import org.apache.spark.memory.TaskMemoryManager
 import org.apache.spark.rpc.RpcTimeout
-import org.apache.spark.scheduler.{AccumulableInfo, DirectTaskResult, IndirectTaskResult, Task}
+import org.apache.spark.scheduler.{DirectTaskResult, IndirectTaskResult, Task}
 import org.apache.spark.shuffle.FetchFailedException
-import org.apache.spark.storage.{StorageLevel, TaskResultBlockId}
+import org.apache.spark.storage.{BlockManager, StorageLevel, TaskResultBlockId}
 import org.apache.spark.util._
 import org.apache.spark.util.io.ChunkedByteBuffer
 
@@ -142,7 +143,7 @@ private[spark] class Executor(
       taskName: String,
       serializedTask: ByteBuffer): Unit = {
     val tr = new TaskRunner(context, taskId = taskId, attemptNumber = attemptNumber, taskName,
-      serializedTask)
+      serializedTask, env.blockManager) // TXH added
     runningTasks.put(taskId, tr)
     threadPool.execute(tr)
   }
@@ -189,7 +190,8 @@ private[spark] class Executor(
       val taskId: Long,
       val attemptNumber: Int,
       taskName: String,
-      serializedTask: ByteBuffer)
+      serializedTask: ByteBuffer,
+      blockManager: BlockManager) // TXH added
     extends Runnable {
 
     /** Whether this task has been killed. */

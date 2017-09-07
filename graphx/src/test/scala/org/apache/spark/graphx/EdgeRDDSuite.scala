@@ -17,8 +17,13 @@
 
 package org.apache.spark.graphx
 
+import java.io.{File, FileOutputStream, OutputStreamWriter}
+import java.nio.charset.StandardCharsets
+
 import org.apache.spark.SparkFunSuite
+
 import org.apache.spark.storage.StorageLevel
+import org.apache.spark.util.Utils
 
 class EdgeRDDSuite extends SparkFunSuite with LocalSparkContext {
 
@@ -32,5 +37,77 @@ class EdgeRDDSuite extends SparkFunSuite with LocalSparkContext {
       assert(edges.getStorageLevel == StorageLevel.MEMORY_ONLY)
     }
   }
+
+  /*
+  test("count degrees") {
+    withSpark { sc =>
+      val tmpDir = Utils.createTempDir()
+      val graphFile = new File(tmpDir.getAbsolutePath, "graph.txt")
+      val writer = new OutputStreamWriter(new FileOutputStream(graphFile), StandardCharsets.UTF_8)
+      for (i <- (1 until 101)) writer.write(s"$i 0\n")
+      writer.close()
+      try {
+        // val graph = GraphLoader.edgeListFile(sc, tmpDir.getAbsolutePath, numEdgePartitions = 10)
+        val startTime = System.currentTimeMillis()
+        val graph = GraphLoader.edgeListFile(sc, "/Users/XinhuiTian/Downloads/roadNet-CA.txt", numEdgePartitions = 10)
+          // .partitionBy(PartitionStrategy.EdgePartition2D)
+        // val graph = GraphLoader.edgeListFile(sc, "/Users/XinhuiTian/Downloads/wiki-Vote.txt", numEdgePartitions = 100).partitionBy(PartitionStrategy.EdgePartition2D)
+        // val graph = GraphLoader.edgeListFile(sc, "/Users/XinhuiTian/Downloads/soc-Epinions1.txt", numEdgePartitions = 1000).partitionBy(PartitionStrategy.EdgePartition2D)
+        val period = System.currentTimeMillis() - startTime
+        println("Loading Time: " + period)
+        val startDTime = System.currentTimeMillis()
+        val inDegrees = graph.inDegrees
+        inDegrees.count
+        val endDTime = System.currentTimeMillis()
+        println("Compute in degree, time: " + (endDTime - startDTime))
+        val inDegreesFromEdges = graph.edges.maxInDegreeCounts
+        println("real partition number: " + graph.edges.getNumPartitions)
+        val sameInCounts = inDegrees.zipPartitions(inDegreesFromEdges) { (globalIter, localIter) =>
+          val globalArray = globalIter.toArray
+          var sameCount = 0
+          localIter.foreach { local =>
+            globalArray.foreach{ global =>
+              if (global._1 == local._1) {
+                if (global._2 == local._2)
+                  sameCount += 1
+              }
+            }
+          }
+          Iterator(sameCount)
+        }.sum()
+        println(sameInCounts)
+
+
+        val outDegrees = graph.outDegrees
+        val outDegreesFromEdges = graph.edges.maxOutDegreeCounts
+        // outDegreesFromEdges.foreachPartition{ part => part.foreach(println); println}
+        val sameOutCounts = outDegrees.zipPartitions(outDegreesFromEdges) { (globalIter, localIter) =>
+          val globalArray = globalIter.toArray
+          var sameCount = 0
+          localIter.foreach { local =>
+            globalArray.foreach{ global =>
+              if (global._1 == local._1) {
+                if (global._2 == local._2)
+                  // println(global._1)
+                  sameCount += 1
+              }
+            }
+          }
+          Iterator(sameCount)
+        }.sum()
+        println(sameOutCounts)
+        println("Total Vertices: " + graph.numVertices)
+        println("Total Edges: "+ graph.numEdges)
+
+        /*
+        val neighborAttrSums = graph.aggregateMessages[Int](
+          ctx => ctx.sendToDst(ctx.srcAttr),
+          _ + _)
+        assert(neighborAttrSums.collect.toSet === Set((0: VertexId, 100)))*/
+      } finally {
+        // Utils.deleteRecursively(tmpDir)
+      }
+    }
+  }*/
 
 }

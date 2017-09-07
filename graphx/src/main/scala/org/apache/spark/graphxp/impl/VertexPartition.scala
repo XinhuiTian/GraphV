@@ -19,10 +19,10 @@ package org.apache.spark.graphxp.impl
 
 import scala.reflect.ClassTag
 
-import org.apache.spark.graphx._
+import org.apache.spark.graphxp._
 import org.apache.spark.util.collection.BitSet
 
-private[graphx] object VertexPartition {
+private[graphxp] object VertexPartition {
   /** Construct a `VertexPartition` from the given vertices. */
   def apply[VD: ClassTag](iter: Iterator[(VertexId, VD)])
     : VertexPartition[VD] = {
@@ -52,13 +52,13 @@ private[graphx] object VertexPartition {
 }
 
 /** A map from vertex id to vertex attribute. */
-private[graphx] class VertexPartition[VD: ClassTag](
+private[graphxp] class VertexPartition[VD: ClassTag](
     val index: VertexIdToIndexMap,
     val values: Array[VD],
     val mask: BitSet)
   extends VertexPartitionBase[VD]
 
-private[graphx] class VertexPartitionOps[VD: ClassTag](self: VertexPartition[VD])
+private[graphxp] class VertexPartitionOps[VD: ClassTag](self: VertexPartition[VD])
   extends VertexPartitionBaseOps[VD, VertexPartition](self) {
 
   def withIndex(index: VertexIdToIndexMap): VertexPartition[VD] = {

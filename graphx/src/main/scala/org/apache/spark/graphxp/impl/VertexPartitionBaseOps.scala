@@ -20,8 +20,9 @@ package org.apache.spark.graphxp.impl
 import scala.language.{higherKinds, implicitConversions}
 import scala.reflect.ClassTag
 
-import org.apache.spark.graphx._
+import org.apache.spark.graphxp._
 import org.apache.spark.graphxp.util.collection
+import org.apache.spark.graphxp.util.collection.GraphXPrimitiveKeyOpenHashMap
 import org.apache.spark.internal.Logging
 import org.apache.spark.util.collection.BitSet
 
@@ -30,9 +31,9 @@ import org.apache.spark.util.collection.BitSet
  * implicit evidence of membership in the `VertexPartitionBaseOpsConstructor` typeclass (for
  * example, [[VertexPartition.VertexPartitionOpsConstructor]]).
  */
-private[graphx] abstract class VertexPartitionBaseOps
-    [VD: ClassTag, Self[X] <: VertexPartitionBase[X]: VertexPartitionBaseOpsConstructor]
-    (self: Self[VD])
+private[graphxp] abstract class VertexPartitionBaseOps
+[VD: ClassTag, Self[X] <: VertexPartitionBase[X]: VertexPartitionBaseOpsConstructor]
+(self: Self[VD])
   extends Serializable with Logging {
 
   def withIndex(index: VertexIdToIndexMap): Self[VD]
@@ -124,8 +125,8 @@ private[graphx] abstract class VertexPartitionBaseOps
 
   /** Left outer join another VertexPartition. */
   def leftJoin[VD2: ClassTag, VD3: ClassTag]
-      (other: Self[VD2])
-      (f: (VertexId, VD, Option[VD2]) => VD3): Self[VD3] = {
+  (other: Self[VD2])
+    (f: (VertexId, VD, Option[VD2]) => VD3): Self[VD3] = {
     if (self.index != other.index) {
       logWarning("Joining two VertexPartitions with different indexes is slow.")
       println("Different index")
@@ -147,15 +148,15 @@ private[graphx] abstract class VertexPartitionBaseOps
 
   /** Left outer join another iterator of messages. */
   def leftJoin[VD2: ClassTag, VD3: ClassTag]
-      (other: Iterator[(VertexId, VD2)])
-      (f: (VertexId, VD, Option[VD2]) => VD3): Self[VD3] = {
+  (other: Iterator[(VertexId, VD2)])
+    (f: (VertexId, VD, Option[VD2]) => VD3): Self[VD3] = {
     leftJoin(createUsingIndex(other))(f)
   }
 
   /** Inner join another VertexPartition. */
   def innerJoin[U: ClassTag, VD2: ClassTag]
-      (other: Self[U])
-      (f: (VertexId, VD, U) => VD2): Self[VD2] = {
+  (other: Self[U])
+    (f: (VertexId, VD, U) => VD2): Self[VD2] = {
     if (self.index != other.index) {
       logWarning("Joining two VertexPartitions with different indexes is slow.")
       innerJoin(createUsingIndex(other.iterator))(f)
@@ -175,8 +176,8 @@ private[graphx] abstract class VertexPartitionBaseOps
    * Inner join an iterator of messages.
    */
   def innerJoin[U: ClassTag, VD2: ClassTag]
-      (iter: Iterator[Product2[VertexId, U]])
-      (f: (VertexId, VD, U) => VD2): Self[VD2] = {
+  (iter: Iterator[Product2[VertexId, U]])
+    (f: (VertexId, VD, U) => VD2): Self[VD2] = {
     innerJoin(createUsingIndex(iter))(f)
   }
 
@@ -184,7 +185,7 @@ private[graphx] abstract class VertexPartitionBaseOps
    * Similar effect as aggregateUsingIndex((a, b) => a)
    */
   def createUsingIndex[VD2: ClassTag](iter: Iterator[Product2[VertexId, VD2]])
-    : Self[VD2] = {
+  : Self[VD2] = {
     val newMask = new BitSet(self.capacity)
     val newValues = new Array[VD2](self.capacity)
     iter.foreach { pair =>
@@ -243,7 +244,7 @@ private[graphx] abstract class VertexPartitionBaseOps
    * Construct a new VertexPartition whose index contains only the vertices in the mask.
    */
   def reindex(): Self[VD] = {
-    val hashMap = new collection.GraphXPrimitiveKeyOpenHashMap[VertexId, VD]
+    val hashMap = new GraphXPrimitiveKeyOpenHashMap[VertexId, VD]
     val arbitraryMerge = (a: VD, b: VD) => a
     for ((k, v) <- self.iterator) {
       hashMap.setMerge(k, v, arbitraryMerge)
@@ -258,7 +259,7 @@ private[graphx] abstract class VertexPartitionBaseOps
    * `VertexPartitionBaseOps`. This relies on the context bound on `Self`.
    */
   private implicit def toOps[VD2: ClassTag](partition: Self[VD2])
-    : VertexPartitionBaseOps[VD2, Self] = {
+  : VertexPartitionBaseOps[VD2, Self] = {
     implicitly[VertexPartitionBaseOpsConstructor[Self]].toOps(partition)
   }
 }

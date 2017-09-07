@@ -21,7 +21,7 @@ import org.apache.spark.graphx._
 import org.apache.spark.graphxp.util.collection
 import org.apache.spark.util.collection.{BitSet, PrimitiveVector}
 
-private[graphx]
+private[graphxp]
 object RoutingTablePartition {
   /**
    * A message from an edge partition to a vertex specifying the position in which the edge
@@ -98,7 +98,7 @@ object RoutingTablePartition {
  * vertex partition. This provides routing information for shipping vertex attributes to edge
  * partitions.
  */
-private[graphx]
+private[graphxp]
 class RoutingTablePartition(
     private val routingTable: Array[(Array[VertexId], BitSet, BitSet)]) extends Serializable {
   /** The maximum number of edge partitions this `RoutingTablePartition` is built to join with. */

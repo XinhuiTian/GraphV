@@ -19,7 +19,7 @@ package org.apache.spark.graphxp
 
 import org.apache.spark.SparkContext
 
-import org.apache.spark.graphx.impl.EdgePartitionBuilder
+import org.apache.spark.graphxp.impl.{EdgePartitionBuilder, GraphImpl}
 import org.apache.spark.internal.Logging
 import org.apache.spark.storage.StorageLevel
 
@@ -96,7 +96,7 @@ object GraphLoader extends Logging {
 
     logInfo("It took %d ms to load the edges".format(System.currentTimeMillis - startTime))
 
-    impl.GraphImpl.fromEdgePartitions(edges, defaultVertexAttr = 1, edgeStorageLevel = edgeStorageLevel,
+    GraphImpl.fromEdgePartitions(edges, defaultVertexAttr = 1, edgeStorageLevel = edgeStorageLevel,
       vertexStorageLevel = vertexStorageLevel)
   } // end of edgeListFile
 

@@ -23,6 +23,7 @@ import scala.reflect.ClassTag
 import breeze.linalg.{Vector => BV}
 
 import org.apache.spark.graphx._
+import org.apache.spark.graphx.impl.GraphImpl._
 import org.apache.spark.internal.Logging
 import org.apache.spark.ml.linalg.{Vector, Vectors}
 
@@ -139,9 +140,13 @@ object PageRank extends Logging {
 
       // Compute the outgoing rank contributions of each vertex, perform local preaggregation, and
       // do the final aggregation at the receiving vertices. Requires a shuffle for aggregation.
+      val aggreSTime = System.currentTimeMillis()
       val rankUpdates = rankGraph.aggregateMessages[Double](
         ctx => ctx.sendToDst(ctx.srcAttr * ctx.attr), _ + _, TripletFields.Src)
 
+      // rankUpdates.count()
+      val aggreETime = System.currentTimeMillis()
+      // println("Aggre: " + (aggreETime - aggreSTime))
       // Apply the final rank updates to get the new ranks, using join to preserve ranks of vertices
       // that didn't receive a message. Requires a shuffle for broadcasting updated ranks to the
       // edge partitions.
@@ -152,11 +157,17 @@ object PageRank extends Logging {
         (src: VertexId, id: VertexId) => resetProb
       }
 
+      val joinStartTime = System.currentTimeMillis()
+      val gcStartTime = computeGcTime()
       rankGraph = rankGraph.joinVertices(rankUpdates) {
         (id, oldRank, msgSum) => rPrb(src, id) + (1.0 - resetProb) * msgSum
       }.cache()
 
       rankGraph.edges.foreachPartition(x => {}) // also materializes rankGraph.vertices
+      val joinEndTime = System.currentTimeMillis()
+      val gcEndTime = computeGcTime()
+      println("Join Time: " + (joinEndTime - joinStartTime))
+      println("Join GC Time: " + (gcEndTime - gcStartTime))
       val endTime = System.currentTimeMillis()
       println(s"PageRank finished iteration $iteration, time: ${endTime - startTime}")
       logInfo(s"PageRank finished iteration $iteration.")
@@ -272,7 +283,7 @@ object PageRank extends Logging {
    * PageRank and edge attributes containing the normalized edge weight.
    *
    * @tparam VD the original vertex attribute (not used)
-   * @tparam ED the original edge attribute (not used)
+   * @tparam ED the original edge attribute  (not used)
    *
    * @param graph the graph on which to compute PageRank
    * @param tol the tolerance allowed at convergence (smaller => more accurate).

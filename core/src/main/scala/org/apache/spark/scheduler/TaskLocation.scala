@@ -59,6 +59,7 @@ private[spark] object TaskLocation {
   val executorLocationTag = "executor_"
 
   def apply(host: String, executorId: String): TaskLocation = {
+    // println("Create a executor cache task location")
     new ExecutorCacheTaskLocation(host, executorId)
   }
 
@@ -68,18 +69,22 @@ private[spark] object TaskLocation {
    * hdfs_cache_[hostname], depending on whether the location is cached.
    */
   def apply(str: String): TaskLocation = {
+
     val hstr = str.stripPrefix(inMemoryLocationTag)
     if (hstr.equals(str)) {
       if (str.startsWith(executorLocationTag)) {
+        // println("Create a location: Executor Cache")
         val hostAndExecutorId = str.stripPrefix(executorLocationTag)
         val splits = hostAndExecutorId.split("_", 2)
         require(splits.length == 2, "Illegal executor location format: " + str)
         val Array(host, executorId) = splits
         new ExecutorCacheTaskLocation(host, executorId)
       } else {
+        // println("Create a location: Host")
         new HostTaskLocation(str)
       }
     } else {
+      // println("Create a location: HDFS cache")
       new HDFSCacheTaskLocation(hstr)
     }
   }

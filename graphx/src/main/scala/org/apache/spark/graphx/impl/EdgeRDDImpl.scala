@@ -24,7 +24,7 @@ import org.apache.spark.graphx._
 import org.apache.spark.rdd.RDD
 import org.apache.spark.storage.StorageLevel
 
-class EdgeRDDImpl[ED: ClassTag, VD: ClassTag] private[graphx] (
+class EdgeRDDImpl[ED: ClassTag, VD: ClassTag] (
     @transient override val partitionsRDD: RDD[(PartitionID, EdgePartition[ED, VD])],
     val targetStorageLevel: StorageLevel = StorageLevel.MEMORY_ONLY)
   extends EdgeRDD[ED](partitionsRDD.context, List(new OneToOneDependency(partitionsRDD))) {
@@ -133,5 +133,4 @@ class EdgeRDDImpl[ED: ClassTag, VD: ClassTag] private[graphx] (
       targetStorageLevel: StorageLevel): EdgeRDDImpl[ED, VD] = {
     new EdgeRDDImpl(this.partitionsRDD, targetStorageLevel)
   }
-
 }

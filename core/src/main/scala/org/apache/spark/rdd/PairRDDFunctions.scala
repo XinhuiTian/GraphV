@@ -33,10 +33,10 @@ import org.apache.hadoop.fs.FileSystem
 import org.apache.hadoop.io.SequenceFile.CompressionType
 import org.apache.hadoop.io.compress.CompressionCodec
 import org.apache.hadoop.mapred.{FileOutputCommitter, FileOutputFormat, JobConf, OutputFormat}
-import org.apache.hadoop.mapreduce.{Job => NewAPIHadoopJob, OutputFormat => NewOutputFormat, RecordWriter => NewRecordWriter, TaskAttemptID, TaskType}
+import org.apache.hadoop.mapreduce.{TaskAttemptID, TaskType, Job => NewAPIHadoopJob, OutputFormat => NewOutputFormat, RecordWriter => NewRecordWriter}
 import org.apache.hadoop.mapreduce.task.TaskAttemptContextImpl
-
 import org.apache.spark._
+
 import org.apache.spark.Partitioner.defaultPartitioner
 import org.apache.spark.annotation.Experimental
 import org.apache.spark.deploy.SparkHadoopUtil
@@ -44,6 +44,7 @@ import org.apache.spark.executor.OutputMetrics
 import org.apache.spark.internal.Logging
 import org.apache.spark.partial.{BoundedDouble, PartialResult}
 import org.apache.spark.serializer.Serializer
+import org.apache.spark.storage.StorageLevel
 import org.apache.spark.util.{SerializableConfiguration, Utils}
 import org.apache.spark.util.collection.CompactBuffer
 import org.apache.spark.util.random.StratifiedSamplingUtils
@@ -542,6 +543,25 @@ class PairRDDFunctions[K, V](self: RDD[(K, V)])
   // added by txh: force partitionBy, even the partitioner is same as this RDD
   def forcePartitionBy(partitioner: Partitioner): RDD[(K, V)] = self.withScope {
     new ShuffledRDD[K, V, V](self, partitioner)
+  }
+
+  // require K to be Int
+  def locAwarePartitionBy(partitioner: Partitioner): RDD[(K, V)] = self.withScope {
+
+    val localElems = self.filter { kv =>
+      val pid = partitioner.getPartition(kv._1)
+      kv._1.asInstanceOf[Int] == pid
+    }.cache()
+
+    val remoteElems = self.filter { kv =>
+      val pid = partitioner.getPartition(kv._1)
+      kv._1.asInstanceOf[Int] != pid
+    }
+
+    val shuffled = new ShuffledRDD[K, V, V](remoteElems, partitioner)
+    shuffled.zipPartitions(localElems) { (remoteIter, localIter) =>
+      remoteIter ++ localIter
+    }
   }
 
   /**

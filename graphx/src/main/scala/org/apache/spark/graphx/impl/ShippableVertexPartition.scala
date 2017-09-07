@@ -101,6 +101,9 @@ class ShippableVertexPartition[VD: ClassTag](
     val routingTable: RoutingTablePartition)
   extends VertexPartitionBase[VD] {
 
+  // var localIndex: VertexIdToIndexMap = null
+  // var localValues: Array[VD] = Array.empty[VD]
+
   /** Return a new ShippableVertexPartition with the specified routing table. */
   def withRoutingTable(_routingTable: RoutingTablePartition): ShippableVertexPartition[VD] = {
     new ShippableVertexPartition(index, values, mask, _routingTable)

@@ -53,6 +53,8 @@ import org.apache.spark.storage.TimeTrackingOutputStream;
 import org.apache.spark.unsafe.Platform;
 import org.apache.spark.util.Utils;
 
+import static scala.Option.apply;
+
 @Private
 public class UnsafeShuffleWriter<K, V> extends ShuffleWriter<K, V> {
 
@@ -462,14 +464,14 @@ public class UnsafeShuffleWriter<K, V> extends ShuffleWriter<K, V> {
       taskContext.taskMetrics().incPeakExecutionMemory(getPeakMemoryUsedBytes());
 
       if (stopping) {
-        return Option.apply(null);
+        return apply(null);
       } else {
         stopping = true;
         if (success) {
           if (mapStatus == null) {
             throw new IllegalStateException("Cannot call stop(true) without having called write()");
           }
-          return Option.apply(mapStatus);
+          return apply(mapStatus);
         } else {
           return Option.apply(null);
         }

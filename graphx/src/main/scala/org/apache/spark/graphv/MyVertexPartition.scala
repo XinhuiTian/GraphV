@@ -16,6 +16,7 @@
  */
 package org.apache.spark.graphv
 
+import scala.collection.mutable.ArrayBuffer
 import scala.reflect.ClassTag
 
 import org.apache.spark.graphx.TripletFields
@@ -44,6 +45,8 @@ class MyVertexPartition[
   extends Serializable {
   // def numActives: Option[Int] = activeSet.map(_.size)
   def vertexSize: Int = vertexIds.size
+
+  def edgeSize: Int = localDstIds.size
 
   val vertexAttrSize: Int = attrs.size
 
@@ -286,16 +289,6 @@ class MyVertexPartition[
         // val dstId = dstIds (dstIndex + i)
         val localDstId = localDstIds(dstIndex + i)
         // println("dstId: " + local2global(localDstId))
-        /*
-        val edgeIsActive =
-          if (activeness == EdgeActiveness.Neither) true
-          else if (activeness == EdgeActiveness.SrcOnly) isActive (srcId)
-          else if (activeness == EdgeActiveness.DstOnly) isActive (dstId)
-          else if (activeness == EdgeActiveness.Both) isActive (srcId) && isActive (dstId)
-          else if (activeness == EdgeActiveness.Either) isActive (srcId) || isActive (dstId)
-          else throw new Exception ("unreachable")
-        if (edgeIsActive) {
-        */
         // txh: do not need to consider the edge activeness
 
         val srcAttr = if (tripletFields.useSrc) attrs (pos) else null.asInstanceOf [VD]

@@ -78,6 +78,8 @@ private[spark] abstract class Task[T](
       metricsSystem,
       metrics)
     TaskContext.setTaskContext(context)
+    // TXH added
+    context.setBlockManager(SparkEnv.get.blockManager)
     taskThread = Thread.currentThread()
     if (_killed) {
       kill(interruptThread = false)

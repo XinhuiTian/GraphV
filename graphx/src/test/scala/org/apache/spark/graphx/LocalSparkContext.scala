@@ -29,7 +29,8 @@ trait LocalSparkContext {
   def withSpark[T](f: SparkContext => T): T = {
     val conf = new SparkConf()
     GraphXUtils.registerKryoClasses(conf)
-    val sc = new SparkContext("local", "test", conf)
+    // TXH added
+    val sc = new SparkContext("local[4]", "test", conf)
     try {
       f(sc)
     } finally {

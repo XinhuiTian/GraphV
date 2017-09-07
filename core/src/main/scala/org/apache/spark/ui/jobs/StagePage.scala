@@ -25,14 +25,14 @@ import scala.collection.mutable.HashSet
 import scala.xml.{Elem, Node, Unparsed}
 
 import org.apache.commons.lang3.StringEscapeUtils
-
 import org.apache.spark.SparkConf
-import org.apache.spark.executor.TaskMetrics
 import org.apache.spark.scheduler.{AccumulableInfo, TaskInfo, TaskLocality}
 import org.apache.spark.ui._
 import org.apache.spark.ui.exec.ExecutorsListener
 import org.apache.spark.ui.jobs.UIData._
 import org.apache.spark.util.{Distribution, Utils}
+
+
 
 /** Page showing statistics and task list for a given stage */
 private[ui] class StagePage(parent: StagesTab) extends WebUIPage("stage") {
@@ -584,7 +584,7 @@ private[ui] class StagePage(parent: StagesTab) extends WebUIPage("stage") {
         </span>
         <div class="aggregated-metrics collapsible-table">
           {executorTable.toNodeSeq}
-        </div>
+        </div>;
 
       val content =
         summary ++
@@ -600,6 +600,7 @@ private[ui] class StagePage(parent: StagesTab) extends WebUIPage("stage") {
         maybeAccumulableTable ++
         <h4 id="tasks-section">Tasks ({totalTasksNumStr})</h4> ++
           taskTableHTML ++ jsForScrollingDownToTaskTable
+
       UIUtils.headerSparkPage(stageHeader, content, parent, showVisualization = true)
     }
   }

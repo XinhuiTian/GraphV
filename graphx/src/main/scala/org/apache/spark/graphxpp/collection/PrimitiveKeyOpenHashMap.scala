@@ -52,7 +52,7 @@ class PrimitiveKeyOpenHashMap[@specialized(Long, Int) K: ClassTag,
    */
   def this(keySet: OpenHashSet[K]) = this(keySet, new Array[V](keySet.capacity))
 
-  require(classTag[K] == classTag[Long] || classTag[K] == classTag[Int])
+  // require(classTag[K] == classTag[Long] || classTag[K] == classTag[Int])
 
   private var _oldValues: Array[V] = null
 
@@ -110,6 +110,12 @@ class PrimitiveKeyOpenHashMap[@specialized(Long, Int) K: ClassTag,
       _values(pos) = mergeValue(_values(pos))
       _values(pos)
     }
+  }
+
+  // TXH added: 3.16
+  def mapValues[V2: ClassTag](mapFunc: V => V2): PrimitiveKeyOpenHashMap[K, V2] = {
+    var _newValues = _values.map(mapFunc)
+    new PrimitiveKeyOpenHashMap(this.keySet, _newValues)
   }
 
   override def iterator: Iterator[(K, V)] = new Iterator[(K, V)] {

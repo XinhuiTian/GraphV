@@ -34,5 +34,7 @@ package object graphxp {
   // TODO: Consider using Char.
   type PartitionID = Int
 
-  private[graphx] type VertexSet = OpenHashSet[VertexId]
+  private[graphxp] type VertexSet = OpenHashSet[VertexId]
+
+  private[graphxp] type LocalVertexSet = OpenHashSet[Int]
 }

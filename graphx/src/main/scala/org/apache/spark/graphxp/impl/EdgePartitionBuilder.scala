@@ -22,11 +22,13 @@ import scala.reflect.ClassTag
 import org.apache.spark.graphxp
 
 import org.apache.spark.graphx._
+import org.apache.spark.graphxp.LocalVertexSet
 import org.apache.spark.graphxp.util.collection
+import org.apache.spark.graphxp.util.collection.GraphXPrimitiveKeyOpenHashMap
 import org.apache.spark.util.collection.{PrimitiveVector, SortDataFormat, Sorter}
 
 /** Constructs an EdgePartition from scratch. */
-private[graphx]
+private[graphxp]
 class EdgePartitionBuilder[@specialized(Long, Int, Double) ED: ClassTag, VD: ClassTag](
     size: Int = 64) {
   private[this] val edges = new PrimitiveVector[graphxp.Edge[ED]](size)
@@ -36,6 +38,7 @@ class EdgePartitionBuilder[@specialized(Long, Int, Double) ED: ClassTag, VD: Cla
     edges += graphxp.Edge(src, dst, d)
   }
 
+  // change the index into a local index
   def toEdgePartition: EdgePartition[ED, VD] = {
     val edgeArray = edges.trim().array
     new Sorter(graphxp.Edge.edgeArraySortDataFormat[ED])
@@ -43,14 +46,15 @@ class EdgePartitionBuilder[@specialized(Long, Int, Double) ED: ClassTag, VD: Cla
     val localSrcIds = new Array[Int](edgeArray.length)
     val localDstIds = new Array[Int](edgeArray.length)
     val data = new Array[ED](edgeArray.length)
-    val index = new collection.GraphXPrimitiveKeyOpenHashMap[VertexId, Int]
-    val global2local = new collection.GraphXPrimitiveKeyOpenHashMap[VertexId, Int]
+    // val index = new collection.GraphXPrimitiveKeyOpenHashMap[VertexId, Int]
+    val index = new GraphXPrimitiveKeyOpenHashMap[Int, Int]
+    val global2local = new GraphXPrimitiveKeyOpenHashMap[VertexId, Int]
     val local2global = new PrimitiveVector[VertexId]
     var vertexAttrs = Array.empty[VD]
     // Copy edges into columnar structures, tracking the beginnings of source vertex id clusters and
     // adding them to the index. Also populate a map from vertex id to a sequential local offset.
     if (edgeArray.length > 0) {
-      index.update(edgeArray(0).srcId, 0)
+
       var currSrcId: VertexId = edgeArray(0).srcId
       var currLocalId = -1
       var i = 0
@@ -59,12 +63,22 @@ class EdgePartitionBuilder[@specialized(Long, Int, Double) ED: ClassTag, VD: Cla
         val dstId = edgeArray(i).dstId
         localSrcIds(i) = global2local.changeValue(srcId,
           { currLocalId += 1; local2global += srcId; currLocalId }, identity)
+        if (i == 0) {
+          index.update(localSrcIds(0), 0)
+        }
+
         localDstIds(i) = global2local.changeValue(dstId,
           { currLocalId += 1; local2global += dstId; currLocalId }, identity)
         data(i) = edgeArray(i).attr
+        /*
         if (srcId != currSrcId) {
           currSrcId = srcId
           index.update(currSrcId, i)
+        }
+        */
+        if (localSrcIds(i) != global2local(currSrcId)) {
+          currSrcId = srcId
+          index.update(localSrcIds(i), i)
         }
 
         i += 1
@@ -72,7 +86,7 @@ class EdgePartitionBuilder[@specialized(Long, Int, Double) ED: ClassTag, VD: Cla
       vertexAttrs = new Array[VD](currLocalId + 1)
     }
     new EdgePartition(
-      localSrcIds, localDstIds, data, index, global2local, local2global.trim().array, vertexAttrs,
+      localSrcIds, localDstIds, data, index, local2global.trim().array, vertexAttrs,
       None)
   }
 }
@@ -84,10 +98,10 @@ class EdgePartitionBuilder[@specialized(Long, Int, Double) ED: ClassTag, VD: Cla
 private[impl]
 class ExistingEdgePartitionBuilder[
     @specialized(Long, Int, Double) ED: ClassTag, VD: ClassTag](
-    global2local: collection.GraphXPrimitiveKeyOpenHashMap[VertexId, Int],
+    // global2local: collection.GraphXPrimitiveKeyOpenHashMap[VertexId, Int],
     local2global: Array[VertexId],
     vertexAttrs: Array[VD],
-    activeSet: Option[VertexSet],
+    activeSet: Option[LocalVertexSet],
     size: Int = 64) {
   private[this] val edges = new PrimitiveVector[EdgeWithLocalIds[ED]](size)
 
@@ -96,6 +110,7 @@ class ExistingEdgePartitionBuilder[
     edges += EdgeWithLocalIds(src, dst, localSrc, localDst, d)
   }
 
+  // changed by TXH
   def toEdgePartition: EdgePartition[ED, VD] = {
     val edgeArray = edges.trim().array
     new Sorter(EdgeWithLocalIds.edgeArraySortDataFormat[ED])
@@ -103,27 +118,27 @@ class ExistingEdgePartitionBuilder[
     val localSrcIds = new Array[Int](edgeArray.length)
     val localDstIds = new Array[Int](edgeArray.length)
     val data = new Array[ED](edgeArray.length)
-    val index = new collection.GraphXPrimitiveKeyOpenHashMap[VertexId, Int]
+    val index = new GraphXPrimitiveKeyOpenHashMap[Int, Int]
     // Copy edges into columnar structures, tracking the beginnings of source vertex id clusters and
     // adding them to the index
     if (edgeArray.length > 0) {
-      index.update(edgeArray(0).srcId, 0)
-      var currSrcId: VertexId = edgeArray(0).srcId
+      index.update(edgeArray(0).localSrcId, 0)
+      var currLocalSrcId: Int = edgeArray(0).localSrcId
       var i = 0
       while (i < edgeArray.length) {
         localSrcIds(i) = edgeArray(i).localSrcId
         localDstIds(i) = edgeArray(i).localDstId
         data(i) = edgeArray(i).attr
-        if (edgeArray(i).srcId != currSrcId) {
-          currSrcId = edgeArray(i).srcId
-          index.update(currSrcId, i)
+        if (edgeArray(i).srcId != currLocalSrcId) {
+          currLocalSrcId = edgeArray(i).localSrcId
+          index.update(currLocalSrcId, i)
         }
         i += 1
       }
     }
 
     new EdgePartition(
-      localSrcIds, localDstIds, data, index, global2local, local2global, vertexAttrs, activeSet)
+      localSrcIds, localDstIds, data, index, local2global, vertexAttrs, activeSet)
   }
 }
 
@@ -143,7 +158,7 @@ private[impl] object EdgeWithLocalIds {
       }
     }
 
-  private[graphx] def edgeArraySortDataFormat[ED] = {
+  private[graphxp] def edgeArraySortDataFormat[ED] = {
     new SortDataFormat[EdgeWithLocalIds[ED], Array[EdgeWithLocalIds[ED]]] {
       override def getKey(data: Array[EdgeWithLocalIds[ED]], pos: Int): EdgeWithLocalIds[ED] = {
         data(pos)

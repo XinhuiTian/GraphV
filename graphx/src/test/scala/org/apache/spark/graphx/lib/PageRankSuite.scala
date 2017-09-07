@@ -18,8 +18,8 @@
 package org.apache.spark.graphx.lib
 
 import org.apache.spark.SparkFunSuite
+
 import org.apache.spark.graphx._
-import org.apache.spark.graphx.lib._
 import org.apache.spark.graphx.util.GraphGenerators
 
 
@@ -67,13 +67,22 @@ class PageRankSuite extends SparkFunSuite with LocalSparkContext {
   test("Star PageRank") {
     withSpark { sc =>
       val nVertices = 100
-      val starGraph = GraphGenerators.starGraph(sc, nVertices).cache()
+      val startTime = System.currentTimeMillis()
+      // val starGraph = GraphGenerators.starGraph(sc, nVertices).cache()
+      val starGraph = GraphLoader.edgeListFile(sc, "/Users/XinhuiTian/Downloads/soc-Epinions1.txt", numEdgePartitions = 8)
       val resetProb = 0.15
       val errorTol = 1.0e-5
+      println("vertices: " + starGraph.numVertices)
+      // starGraph.vertices.foreach(println)
+      /*
 
-      val staticRanks1 = starGraph.staticPageRank(numIter = 1, resetProb).vertices
+
+
+      val staticRanks1 = starGraph.staticPageRank(numIter = 10, resetProb).vertices
       val staticRanks2 = starGraph.staticPageRank(numIter = 2, resetProb).vertices.cache()
 
+      println(staticRanks1.values.sum())
+      println("Vertices: " + staticRanks1.count())
       // Static PageRank should only take 2 iterations to converge
       val notMatching = staticRanks1.innerZipJoin(staticRanks2) { (vid, pr1, pr2) =>
         if (pr1 != pr2) 1 else 0
@@ -86,11 +95,18 @@ class PageRankSuite extends SparkFunSuite with LocalSparkContext {
         if (!correct) 1 else 0
       }
       assert(staticErrors.sum === 0)
+      */
 
-      val dynamicRanks = starGraph.pageRank(0, resetProb).vertices.cache()
-      assert(compareRanks(staticRanks2, dynamicRanks) < errorTol)
+      // val dynamicRanks = starGraph.pageRank(0, resetProb).vertices.cache()
+      // assert(compareRanks(staticRanks2, dynamicRanks) < errorTol)
+      val ranks = starGraph.staticPageRank(10, resetProb).vertices.cache()
+      val endTime = System.currentTimeMillis()
+      println(s"Total Time: ${endTime - startTime}")
+
     }
   } // end of test Star PageRank
+
+
 
   test("Star PersonalPageRank") {
     withSpark { sc =>

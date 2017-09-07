@@ -18,8 +18,8 @@ package org.apache.spark.graphv
 
 import scala.reflect.ClassTag
 
-import org.apache.spark.graphx.TripletFields
-import org.apache.spark.graphx.impl.EdgeActiveness
+import org.apache.spark.graphx.{Graph, TripletFields, VertexRDD}
+import org.apache.spark.graphx.impl.{EdgeActiveness, GraphImpl}
 import org.apache.spark.internal.Logging
 import org.apache.spark.rdd.RDD
 import org.apache.spark.storage.StorageLevel
@@ -82,15 +82,15 @@ class MyGraphImpl[VD: ClassTag, ED: ClassTag] protected(
   (f: (VertexId, VD) => VD2)(implicit eq: VD =:= VD2 = null): MyGraph[VD2, ED] = {
     // The implicit parameter eq will be populated by the compiler if VD and VD2 are equal, and left
     // null if not
-    if (eq != null) {
+    // if (eq != null) {
       // vertices.cache ()
       // The map preserves type, so we can use incremental replication
-      val newVerts = vertices.mapVertexPartitions (f)
+      val newVerts = vertices.mapVertexPartitions (_.map(f))
       new MyGraphImpl (newVerts)
-    } else {
+    // } else {
       // The map does not preserve type, so we must re-replicate all vertices
-      new MyGraphImpl (vertices.mapVertexPartitions (f))
-    }
+    //   new MyGraphImpl (vertices.mapVertexPartitions (_.map(f)))
+    // }
   }
 
   override def joinLocalVertices[U: ClassTag](table: RDD[(Int, U)], needActive: Boolean)
@@ -238,6 +238,12 @@ class MyGraphImpl[VD: ClassTag, ED: ClassTag] protected(
     // println("  It took %d ms count aggregate".format(System.currentTimeMillis - mid))
 
     r
+  }
+
+  override def toGraphX: Graph[VD, ED] = {
+    val edges = vertices.toEdgeRDD
+    GraphImpl.fromEdgeRDD(edges, null.asInstanceOf[VD],
+      StorageLevel.MEMORY_ONLY, StorageLevel.MEMORY_ONLY)
   }
 }
 

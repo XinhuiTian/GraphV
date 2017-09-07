@@ -606,7 +606,7 @@ object GraphImpl {
     masterMask.setUntil(masterSize)
 
     new EdgePartition(localSrcIds, localDstIds, data,
-        index, localMasters, localMirrors,
+        index, localMasters,
         global2local, local2global.trim().array,
         vertexAttrs.slice(0, masterSize),
         vertexAttrs.slice(masterSize, currLocalId + 1), masterMask, numParts, None)

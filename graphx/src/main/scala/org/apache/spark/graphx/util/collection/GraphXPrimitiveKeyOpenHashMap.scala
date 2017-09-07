@@ -28,7 +28,7 @@ import org.apache.spark.util.collection.OpenHashSet
  *
  * Under the hood, it uses our OpenHashSet implementation.
  */
-private[graphx]
+// private[graphx]
 class GraphXPrimitiveKeyOpenHashMap[@specialized(Long, Int) K: ClassTag,
                               @specialized(Long, Int, Double) V: ClassTag](
     val keySet: OpenHashSet[K], var _values: Array[V])

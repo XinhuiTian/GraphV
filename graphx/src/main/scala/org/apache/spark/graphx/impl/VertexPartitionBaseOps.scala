@@ -129,6 +129,7 @@ private[graphx] abstract class VertexPartitionBaseOps
       (f: (VertexId, VD, Option[VD2]) => VD3): Self[VD3] = {
     if (self.index != other.index) {
       logWarning("Joining two VertexPartitions with different indexes is slow.")
+      println("Different index")
       leftJoin(createUsingIndex(other.iterator))(f)
     } else {
       val newValues = new Array[VD3](self.capacity)
@@ -218,6 +219,7 @@ private[graphx] abstract class VertexPartitionBaseOps
   def aggregateUsingIndex[VD2: ClassTag](
       iter: Iterator[Product2[VertexId, VD2]],
       reduceFunc: (VD2, VD2) => VD2): Self[VD2] = {
+    var count = 0
     val newMask = new BitSet(self.capacity)
     val newValues = new Array[VD2](self.capacity)
     iter.foreach { product =>
@@ -227,12 +229,14 @@ private[graphx] abstract class VertexPartitionBaseOps
       if (pos >= 0) {
         if (newMask.get(pos)) {
           newValues(pos) = reduceFunc(newValues(pos), vdata)
+          // count += 1
         } else { // otherwise just store the new value
           newMask.set(pos)
           newValues(pos) = vdata
         }
       }
     }
+    // println("aggregate Count: " + count)
     this.withValues(newValues).withMask(newMask)
   }
 

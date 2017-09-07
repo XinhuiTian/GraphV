@@ -36,8 +36,12 @@ class VertexRDDImpl[VD] private[graphx] (
 
   override val partitioner = partitionsRDD.partitioner
 
-  override protected def getPreferredLocations(s: Partition): Seq[String] =
-    partitionsRDD.preferredLocations(s)
+  override protected def getPreferredLocations(s: Partition): Seq[String] = {
+    println("Get Prefer location in VertexRDDImpl")
+    val locs = partitionsRDD.preferredLocations (s)
+    println(locs)
+    locs
+  }
 
   override def setName(_name: String): this.type = {
     if (partitionsRDD.name != null) {
@@ -149,6 +153,7 @@ class VertexRDDImpl[VD] private[graphx] (
 
   override def leftZipJoin[VD2: ClassTag, VD3: ClassTag]
       (other: VertexRDD[VD2])(f: (VertexId, VD, Option[VD2]) => VD3): VertexRDD[VD3] = {
+    val st = System.currentTimeMillis()
     val newPartitionsRDD = partitionsRDD.zipPartitions(
       other.partitionsRDD, preservesPartitioning = true
     ) { (thisIter, otherIter) =>
@@ -156,6 +161,10 @@ class VertexRDDImpl[VD] private[graphx] (
       val otherPart = otherIter.next()
       Iterator(thisPart.leftJoin(otherPart)(f))
     }
+
+    // newPartitionsRDD.count()
+    // val et = System.currentTimeMillis()
+    // println("leftJoin: " + (et - st))
     this.withPartitionsRDD(newPartitionsRDD)
   }
 
@@ -167,6 +176,7 @@ class VertexRDDImpl[VD] private[graphx] (
     // If the other set is a VertexRDD then we use the much more efficient leftZipJoin
     other match {
       case other: VertexRDD[_] if this.partitioner == other.partitioner =>
+        println("Same partition")
         leftZipJoin(other)(f)
       case _ =>
         this.withPartitionsRDD[VD3](

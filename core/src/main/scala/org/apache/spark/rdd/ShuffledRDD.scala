@@ -98,9 +98,12 @@ class ShuffledRDD[K: ClassTag, V: ClassTag, C: ClassTag](
   }
 
   override protected def getPreferredLocations(partition: Partition): Seq[String] = {
+
     val tracker = SparkEnv.get.mapOutputTracker.asInstanceOf[MapOutputTrackerMaster]
     val dep = dependencies.head.asInstanceOf[ShuffleDependency[K, V, C]]
-    tracker.getPreferredLocationsForShuffle(dep, partition.index)
+    val locs = tracker.getPreferredLocationsForShuffle(dep, partition.index)
+    // println("ShuffleRDD getPreferredLocations: " + this.name + " " + this.toString + " " + locs)
+    locs
   }
 
   override def compute(split: Partition, context: TaskContext): Iterator[(K, C)] = {

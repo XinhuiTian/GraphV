@@ -31,7 +31,7 @@ import org.apache.spark.util.Utils
  * Includes an utility function to test whether a function accesses a specific attribute
  * of an object.
  */
-private[graphx] object BytecodeUtils {
+private[graphxp] object BytecodeUtils {
 
   /**
    * Test whether the given closure invokes the specified method in the specified class.

@@ -21,7 +21,7 @@ import scala.reflect.ClassTag
 
 import org.apache.spark.graphx._
 import org.apache.spark.graphx.util.collection.GraphXPrimitiveKeyOpenHashMap
-import org.apache.spark.util.collection.BitSet
+import org.apache.spark.util.collection.{BitSet, OpenHashSet}
 
 /**
  * A collection of edges, along with referenced vertex attributes and an optional active vertex set
@@ -51,26 +51,52 @@ import org.apache.spark.util.collection.BitSet
  * @param vertexAttrs an array of vertex attributes where the offsets are local vertex ids
  * @param activeSet an optional active vertex set for filtering computation on the edges
  */
-private[graphx]
+// private[graphx]
 class EdgePartition[
     @specialized(Char, Int, Boolean, Byte, Long, Float, Double) ED: ClassTag, VD: ClassTag](
     localSrcIds: Array[Int],
-    localDstIds: Array[Int],
-    data: Array[ED],
-    index: GraphXPrimitiveKeyOpenHashMap[VertexId, Int],
-    global2local: GraphXPrimitiveKeyOpenHashMap[VertexId, Int],
-    local2global: Array[VertexId],
-    vertexAttrs: Array[VD],
-    activeSet: Option[VertexSet])
+    val localDstIds: Array[Int],
+    val data: Array[ED],
+    val index: GraphXPrimitiveKeyOpenHashMap[VertexId, Int],
+    val global2local: GraphXPrimitiveKeyOpenHashMap[VertexId, Int],
+    val local2global: Array[VertexId],
+    val vertexAttrs: Array[VD],
+    val activeSet: Option[VertexSet],
+    val localIndex: OpenHashSet[VertexId] = null)
   extends Serializable {
 
   /** No-arg constructor for serialization. */
   private def this() = this(null, null, null, null, null, null, null, null)
 
+  def countingInEdges: Array[Int] = {
+    val inDegrees = Array.fill[Int](vertexAttrs.length)(0)
+    // val inDegrees = new GraphXPrimitiveKeyOpenHashMap[VertexId, Int]
+    (0 until size).foreach { i =>
+      val localDstId = localDstIds(i)
+      inDegrees(localDstId) += 1
+    }
+    inDegrees
+  }
+
+  def countingOutEdges: Array[Int] = {
+    val outDegrees = Array.fill[Int](vertexAttrs.length)(0)
+    (0 until size).foreach { i =>
+      val localSrcId = localSrcIds(i)
+      outDegrees(localSrcId) += 1
+    }
+    outDegrees
+  }
+
+  def withIndex(localIndex: OpenHashSet[VertexId]): EdgePartition[ED, VD] = {
+    new EdgePartition(
+      localSrcIds, localDstIds, data, index, global2local,
+      local2global, vertexAttrs, activeSet, localIndex)
+  }
+
   /** Return a new `EdgePartition` with the specified edge data. */
   def withData[ED2: ClassTag](data: Array[ED2]): EdgePartition[ED2, VD] = {
     new EdgePartition(
-      localSrcIds, localDstIds, data, index, global2local, local2global, vertexAttrs, activeSet)
+      localSrcIds, localDstIds, data, index, global2local, local2global, vertexAttrs, activeSet, localIndex)
   }
 
   /** Return a new `EdgePartition` with the specified active set, provided as an iterator. */
@@ -79,20 +105,23 @@ class EdgePartition[
     while (iter.hasNext) { activeSet.add(iter.next()) }
     new EdgePartition(
       localSrcIds, localDstIds, data, index, global2local, local2global, vertexAttrs,
-      Some(activeSet))
+      Some(activeSet), localIndex)
   }
 
   /** Return a new `EdgePartition` with updates to vertex attributes specified in `iter`. */
   def updateVertices(iter: Iterator[(VertexId, VD)]): EdgePartition[ED, VD] = {
     val newVertexAttrs = new Array[VD](vertexAttrs.length)
     System.arraycopy(vertexAttrs, 0, newVertexAttrs, 0, vertexAttrs.length)
+    val st = System.currentTimeMillis()
     while (iter.hasNext) {
       val kv = iter.next()
       newVertexAttrs(global2local(kv._1)) = kv._2
     }
+    val et = System.currentTimeMillis()
+    println("updateVertex: " + (et - st))
     new EdgePartition(
       localSrcIds, localDstIds, data, index, global2local, local2global, newVertexAttrs,
-      activeSet)
+      activeSet, localIndex)
   }
 
   /** Return a new `EdgePartition` without any locally cached vertex attributes. */
@@ -100,7 +129,7 @@ class EdgePartition[
     val newVertexAttrs = new Array[VD2](vertexAttrs.length)
     new EdgePartition(
       localSrcIds, localDstIds, data, index, global2local, local2global, newVertexAttrs,
-      activeSet)
+      activeSet, localIndex)
   }
 
   @inline private def srcIds(pos: Int): VertexId = local2global(localSrcIds(pos))
@@ -413,7 +442,11 @@ class EdgePartition[
       i += 1
     }
 
-    bitset.iterator.map { localId => (local2global(localId), aggregates(localId)) }
+    // val startTime = System.currentTimeMillis()
+    val msgs = bitset.iterator.map { localId => (local2global(localId), aggregates(localId)) }
+    // val endTime = System.currentTimeMillis()
+    // println("EdgeScan index time: " + (endTime - startTime))
+    msgs
   }
 
   /**

@@ -20,8 +20,7 @@ package org.apache.spark.graphxp
 import scala.reflect.ClassTag
 
 import org.apache.spark.{graphxp, _}
-
-import org.apache.spark.graphx.impl.{RoutingTablePartition, ShippableVertexPartition, VertexAttributeBlock}
+import org.apache.spark.graphxp.impl._
 import org.apache.spark.rdd._
 import org.apache.spark.storage.StorageLevel
 
@@ -29,7 +28,7 @@ import org.apache.spark.storage.StorageLevel
  * Extends `RDD[(VertexId, VD)]` by ensuring that there is only one entry for each vertex and by
  * pre-indexing the entries for fast, efficient joins. Two VertexRDDs with the same index can be
  * joined efficiently. All operations except [[reindex]] preserve the index. To construct a
- * `VertexRDD`, use the [[org.apache.spark.graphx.VertexRDD$ VertexRDD object]].
+ * `VertexRDD`, use the [[org.apache.spark.graphxp.VertexRDD$ VertexRDD object]].
  *
  * Additionally, stores routing information to enable joining the vertex attributes with an
  * [[EdgeRDD]].
@@ -55,7 +54,7 @@ abstract class VertexRDD[VD](
 
   implicit protected def vdTag: ClassTag[VD]
 
-  private[graphx] def partitionsRDD: RDD[ShippableVertexPartition[VD]]
+  private[graphxp] def partitionsRDD: RDD[ShippableVertexPartition[VD]]
 
   override protected def getPartitions: Array[Partition] = partitionsRDD.partitions
 
@@ -71,12 +70,12 @@ abstract class VertexRDD[VD](
    * VertexRDD will be based on a different index and can no longer be quickly joined with this
    * RDD.
    */
-  def reindex(): VertexRDD[VD]
+  // def reindex(): VertexRDD[VD]
 
   /**
    * Applies a function to each `VertexPartition` of this RDD and returns a new VertexRDD.
    */
-  private[graphx] def mapVertexPartitions[VD2: ClassTag](
+  private[graphxp] def mapVertexPartitions[VD2: ClassTag](
       f: ShippableVertexPartition[VD] => ShippableVertexPartition[VD2])
     : VertexRDD[VD2]
 
@@ -227,13 +226,13 @@ abstract class VertexRDD[VD](
    * Returns a new `VertexRDD` reflecting a reversal of all edge directions in the corresponding
    * [[EdgeRDD]].
    */
-  def reverseRoutingTables(): VertexRDD[VD]
+  // def reverseRoutingTables(): VertexRDD[VD]
 
   /** Prepares this VertexRDD for efficient joins with the given EdgeRDD. */
   def withEdges(edges: EdgeRDD[_]): VertexRDD[VD]
 
   /** Replaces the vertex partitions while preserving all other properties of the VertexRDD. */
-  private[graphx] def withPartitionsRDD[VD2: ClassTag](
+  private[graphxp] def withPartitionsRDD[VD2: ClassTag](
       partitionsRDD: RDD[ShippableVertexPartition[VD2]]): VertexRDD[VD2]
 
   /**
@@ -243,15 +242,15 @@ abstract class VertexRDD[VD](
    * This does not actually trigger a cache; to do this, call
    * [[graphxp.VertexRDD#cache]] on the returned VertexRDD.
    */
-  private[graphx] def withTargetStorageLevel(
+  private[graphxp] def withTargetStorageLevel(
       targetStorageLevel: StorageLevel): VertexRDD[VD]
 
   /** Generates an RDD of vertex attributes suitable for shipping to the edge partitions. */
-  private[graphx] def shipVertexAttributes(
+  private[graphxp] def shipVertexAttributes(
       shipSrc: Boolean, shipDst: Boolean): RDD[(PartitionID, VertexAttributeBlock[VD])]
 
   /** Generates an RDD of vertex IDs suitable for shipping to the edge partitions. */
-  private[graphx] def shipVertexIds(): RDD[(PartitionID, Array[VertexId])]
+  private[graphxp] def shipVertexIds(): RDD[(PartitionID, Array[Int])]
 
 } // end of VertexRDD
 
@@ -308,6 +307,7 @@ object VertexRDD {
    * @param defaultVal the vertex attribute to use when creating missing vertices
    * @param mergeFunc the commutative, associative duplicate vertex attribute merge function
    */
+  // changed by TXH
   def apply[VD: ClassTag](
       vertices: RDD[(VertexId, VD)], edges: EdgeRDD[_], defaultVal: VD, mergeFunc: (VD, VD) => VD
     ): VertexRDD[VD] = {
@@ -315,6 +315,7 @@ object VertexRDD {
       case Some(p) => vertices
       case None => vertices.partitionBy(new HashPartitioner(vertices.partitions.length))
     }
+    /*
     val routingTables = createRoutingTables(edges, vPartitioned.partitioner.get)
     val vertexPartitions = vPartitioned.zipPartitions(routingTables, preservesPartitioning = true) {
       (vertexIter, routingTableIter) =>
@@ -322,7 +323,15 @@ object VertexRDD {
           if (routingTableIter.hasNext) routingTableIter.next() else RoutingTablePartition.empty
         Iterator(ShippableVertexPartition(vertexIter, routingTable, defaultVal, mergeFunc))
     }
-    new impl.VertexRDDImpl(vertexPartitions)
+    */
+    val localRoutingTables = createLocalRoutingTables(edges, vPartitioned.partitioner.get)
+
+    val vertexPartitions = localRoutingTables.mapPartitions({ routingTableIter =>
+      val routingTable =
+        if (routingTableIter.hasNext) routingTableIter.next() else LocalRoutingTablePartition.empty
+      Iterator(ShippableVertexPartition(Iterator.empty, routingTable, defaultVal, mergeFunc))
+    })
+    new VertexRDDImpl(vertexPartitions)
   }
 
   /**
@@ -335,19 +344,36 @@ object VertexRDD {
    * @param edges the [[EdgeRDD]] referring to the vertices to create
    * @param numPartitions the desired number of partitions for the resulting `VertexRDD`
    * @param defaultVal the vertex attribute to use when creating missing vertices
+   * changed by TXH:
+   * change the routing table implementation to a local2local routing table implementation
+   *
    */
   def fromEdges[VD: ClassTag](
       edges: EdgeRDD[_], numPartitions: Int, defaultVal: VD): VertexRDD[VD] = {
-    val routingTables = createRoutingTables(edges, new HashPartitioner(numPartitions))
+    /* val routingTables = createRoutingTables(edges, new HashPartitioner(numPartitions))
+
     val vertexPartitions = routingTables.mapPartitions({ routingTableIter =>
       val routingTable =
         if (routingTableIter.hasNext) routingTableIter.next() else RoutingTablePartition.empty
       Iterator(ShippableVertexPartition(Iterator.empty, routingTable, defaultVal))
     }, preservesPartitioning = true)
     new impl.VertexRDDImpl(vertexPartitions)
+    */
+    val localRoutingTables = createLocalRoutingTables(edges, new HashPartitioner(numPartitions))
+
+    // println(localRoutingTables.partitioner.isDefined)
+
+    val vertexPartitions = localRoutingTables.mapPartitions({ routingTableIter =>
+      val routingTable =
+        if (routingTableIter.hasNext) routingTableIter.next() else LocalRoutingTablePartition.empty
+      Iterator(ShippableVertexPartition(Iterator.empty, routingTable, defaultVal))
+    }, preservesPartitioning = true)
+
+    // println(vertexPartitions.partitioner.isDefined)
+    new VertexRDDImpl(vertexPartitions)
   }
 
-  private[graphx] def createRoutingTables(
+  private[graphxp] def createRoutingTables(
       edges: EdgeRDD[_], vertexPartitioner: Partitioner): RDD[RoutingTablePartition] = {
     // Determine which vertices each edge partition needs by creating a mapping from vid to pid.
     val vid2pid = edges.partitionsRDD.mapPartitions(_.flatMap(
@@ -357,6 +383,19 @@ object VertexRDD {
     val numEdgePartitions = edges.partitions.length
     vid2pid.partitionBy(vertexPartitioner).mapPartitions(
       iter => Iterator(RoutingTablePartition.fromMsgs(numEdgePartitions, iter)),
+      preservesPartitioning = true)
+  }
+
+  private[graphxp] def createLocalRoutingTables(
+      edges: EdgeRDD[_], vertexPartitioner: Partitioner): RDD[LocalRoutingTablePartition] = {
+    // Determine which vertices each edge partition needs by creating a mapping from vid to pid.
+    val vid2pid = edges.partitionsRDD.mapPartitions(_.flatMap(
+      Function.tupled(LocalRoutingTablePartition.edgePartitionToMsgs)))
+      .setName("VertexRDD.createRoutingTables - vid2pid (aggregation)")
+
+    val numEdgePartitions = edges.partitions.length
+    vid2pid.partitionBy(vertexPartitioner).mapPartitions(
+      iter => Iterator(LocalRoutingTablePartition.fromMsgs(numEdgePartitions, iter)),
       preservesPartitioning = true)
   }
 }

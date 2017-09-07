@@ -29,8 +29,8 @@ import com.clearspring.analytics.stream.cardinality.HyperLogLogPlus
 import org.apache.hadoop.io.{BytesWritable, NullWritable, Text}
 import org.apache.hadoop.io.compress.CompressionCodec
 import org.apache.hadoop.mapred.TextOutputFormat
-
 import org.apache.spark._
+
 import org.apache.spark.Partitioner._
 import org.apache.spark.annotation.{DeveloperApi, Since}
 import org.apache.spark.api.java.JavaRDD
@@ -39,11 +39,10 @@ import org.apache.spark.partial.BoundedDouble
 import org.apache.spark.partial.CountEvaluator
 import org.apache.spark.partial.GroupedCountEvaluator
 import org.apache.spark.partial.PartialResult
-import org.apache.spark.storage.{RDDBlockId, StorageLevel}
+import org.apache.spark.storage.{BlockManager, RDDBlockId, StorageLevel}
 import org.apache.spark.util.{BoundedPriorityQueue, Utils}
 import org.apache.spark.util.collection.OpenHashMap
-import org.apache.spark.util.random.{BernoulliCellSampler, BernoulliSampler, PoissonSampler,
-  SamplingUtils}
+import org.apache.spark.util.random.{BernoulliCellSampler, BernoulliSampler, PoissonSampler, SamplingUtils}
 
 /**
  * A Resilient Distributed Dataset (RDD), the basic abstraction in Spark. Represents an immutable,
@@ -84,6 +83,8 @@ abstract class RDD[T: ClassTag](
     logWarning("Spark does not support nested RDDs (see SPARK-5063)")
   }
 
+  // TXH added
+
   private def sc: SparkContext = {
     if (_sc == null) {
       throw new SparkException(
@@ -114,6 +115,7 @@ abstract class RDD[T: ClassTag](
    */
   @DeveloperApi
   def compute(split: Partition, context: TaskContext): Iterator[T]
+
 
   /**
    * Implemented by subclasses to return the set of partitions in this RDD. This method will only
@@ -276,6 +278,7 @@ abstract class RDD[T: ClassTag](
    * This should ''not'' be called by users directly, but is available for implementors of custom
    * subclasses of RDD.
    */
+
   final def iterator(split: Partition, context: TaskContext): Iterator[T] = {
     if (storageLevel != StorageLevel.NONE) {
       getOrCompute(split, context)
@@ -334,6 +337,9 @@ abstract class RDD[T: ClassTag](
       case Left(blockResult) =>
         if (readCachedBlock) {
           val existingMetrics = context.taskMetrics().inputMetrics
+          // txh added
+          // println("Get read cached block: " + this.toString +
+           //  " size: " + Utils.bytesToString(blockResult.bytes))
           existingMetrics.incBytesRead(blockResult.bytes)
           new InterruptibleIterator[T](context, blockResult.data.asInstanceOf[Iterator[T]]) {
             override def next(): T = {
@@ -783,6 +789,28 @@ abstract class RDD[T: ClassTag](
     new MapPartitionsRDD(
       this,
       (context: TaskContext, index: Int, iter: Iterator[T]) => cleanedF(iter),
+      preservesPartitioning)
+  }
+
+  def mapPartitionsWithLocalShuffle[U: ClassTag](
+      f: (BlockManager, Iterator[T]) => Iterator[U],
+      preservesPartitioning: Boolean = false): RDD[U] = withScope {
+    val cleanedF = sc.clean(f)
+    new LocalShuffledRDD(
+      this,
+      (context: TaskContext, index: Int, iter: Iterator[T]) =>
+        cleanedF(context.getBlockManager, iter),
+      preservesPartitioning)
+  }
+
+  def mapPartitionsWithIndexAndLocalShuffle[U: ClassTag](
+      f: (Int, BlockManager, Iterator[T]) => Iterator[U],
+      preservesPartitioning: Boolean = false): RDD[U] = withScope {
+    val cleanedF = sc.clean(f)
+    new LocalShuffledRDD(
+      this,
+      (context: TaskContext, index: Int, iter: Iterator[T]) =>
+        cleanedF(index, context.getBlockManager, iter),
       preservesPartitioning)
   }
 

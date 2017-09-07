@@ -23,7 +23,7 @@ import scala.util._
 
 import org.apache.spark._
 
-import org.apache.spark.graphx._
+import org.apache.spark.graphxp._
 import org.apache.spark.internal.Logging
 import org.apache.spark.rdd.RDD
 

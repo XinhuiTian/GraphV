@@ -54,13 +54,15 @@ object GraphLoader extends Logging {
    * @param edgeStorageLevel the desired storage level for the edge partitions
    * @param vertexStorageLevel the desired storage level for the vertex partitions
    */
+  // merge the modifications by chen, involving an ingress partitioner here
   def edgeListFile(
       sc: SparkContext,
       path: String,
       canonicalOrientation: Boolean = false,
       numEdgePartitions: Int = -1,
       edgeStorageLevel: StorageLevel = StorageLevel.MEMORY_ONLY,
-      vertexStorageLevel: StorageLevel = StorageLevel.MEMORY_ONLY)
+      vertexStorageLevel: StorageLevel = StorageLevel.MEMORY_ONLY,
+      partitioner: Option[IngressEdgePartitioner] = None)
     : Graph[Int, Int] =
   {
     val startTime = System.currentTimeMillis
@@ -72,7 +74,10 @@ object GraphLoader extends Logging {
       } else {
         sc.textFile(path)
       }
-    val edges = lines.mapPartitionsWithIndex { (pid, iter) =>
+
+    /*
+    val edges = lines.
+      mapPartitionsWithIndex { (pid, iter) =>
       val builder = new EdgePartitionBuilder[Int, Int]
       iter.foreach { line =>
         if (!line.isEmpty && line(0) != '#') {
@@ -92,10 +97,43 @@ object GraphLoader extends Logging {
       Iterator((pid, builder.toEdgePartition))
     }.persist(edgeStorageLevel).setName("GraphLoader.edgeListFile - edges (%s)".format(path))
     edges.count()
+    */
+
+    val edges = lines.filter{ line =>
+      !line.isEmpty && line(0) != '#'
+    }.map { line =>
+      val lineArray = line.split("\\s+")
+      if (lineArray.length < 2) {
+        throw new IllegalArgumentException("Invalid line: " + line)
+      }
+      val srcId = lineArray(0).toLong
+      val dstId = lineArray(1).toLong
+      if (canonicalOrientation && srcId > dstId) {
+        Edge(dstId, srcId, 1)
+      } else {
+        Edge(srcId, dstId, 1)
+      }
+    }
+
+    // partition edges here
+    val partitionedEdges = {
+      if (partitioner != None) {
+        partitioner.get.fromEdges(edges)
+      } else { edges }
+    }.persist
+
+    val edgeParts = partitionedEdges.mapPartitionsWithIndex { (pid, iter) =>
+      val builder = new EdgePartitionBuilder[Int, Int]
+      iter.foreach{ e =>
+        builder.add(e.srcId, e.dstId, e.attr) }
+      Iterator((pid, builder.toEdgePartition))
+    }.persist(edgeStorageLevel).setName("GraphLoader.edgeListFile - edges (%s)".format(path))
+
+    edgeParts.count()
 
     logInfo("It took %d ms to load the edges".format(System.currentTimeMillis - startTime))
 
-    GraphImpl.fromEdgePartitions(edges, defaultVertexAttr = 1, edgeStorageLevel = edgeStorageLevel,
+    GraphImpl.fromEdgePartitions(edgeParts, defaultVertexAttr = 1, edgeStorageLevel = edgeStorageLevel,
       vertexStorageLevel = vertexStorageLevel)
   } // end of edgeListFile
 

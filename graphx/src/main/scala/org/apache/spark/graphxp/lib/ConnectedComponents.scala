@@ -19,7 +19,7 @@ package org.apache.spark.graphxp.lib
 
 import scala.reflect.ClassTag
 
-import org.apache.spark.graphx._
+import org.apache.spark.graphxp._
 
 /** Connected components algorithm. */
 object ConnectedComponents {

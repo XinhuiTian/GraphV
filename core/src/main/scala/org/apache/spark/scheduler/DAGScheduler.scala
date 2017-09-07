@@ -266,6 +266,7 @@ class DAGScheduler(
       val locs: IndexedSeq[Seq[TaskLocation]] = if (rdd.getStorageLevel == StorageLevel.NONE) {
         IndexedSeq.fill(rdd.partitions.length)(Nil)
       } else {
+        // println("Create a executor task location for: " + rdd.name + " " + rdd.toString)
         val blockIds =
           rdd.partitions.indices.map(index => RDDBlockId(rdd.id, index)).toArray[BlockId]
         blockManagerMaster.getLocations(blockIds).map { bms =>
@@ -274,6 +275,7 @@ class DAGScheduler(
       }
       cacheLocs(rdd.id) = locs
     }
+    // println("Cached! Create a executor task location for: " + rdd.name + " " + rdd.toString)
     cacheLocs(rdd.id)
   }
 
@@ -956,7 +958,10 @@ class DAGScheduler(
     val taskIdToLocations: Map[Int, Seq[TaskLocation]] = try {
       stage match {
         case s: ShuffleMapStage =>
-          partitionsToCompute.map { id => (id, getPreferredLocs(stage.rdd, id))}.toMap
+          val parts = partitionsToCompute.map { id => (id, getPreferredLocs(stage.rdd, id))}.toMap
+          // println("TaskIdToLocations for shuffleMapStage")
+          // parts.foreach(a => println("taskIdToLocations: " + a._1 + " " + a._2))
+          parts
         case s: ResultStage =>
           partitionsToCompute.map { id =>
             val p = s.partitions(id)
@@ -971,6 +976,10 @@ class DAGScheduler(
         runningStages -= stage
         return
     }
+
+    // we get no task with Nil location here, how the shuffleStage get the locs?
+    // println("TaskIdToLocations: ")
+    // taskIdToLocations.foreach(a => println("taskIdToLocations: " + a._1 + " " + a._2))
 
     stage.makeNewStageAttempt(partitionsToCompute.size, taskIdToLocations.values.toSeq)
     listenerBus.post(SparkListenerStageSubmitted(stage.latestInfo, properties))
@@ -1541,11 +1550,13 @@ class DAGScheduler(
     // If the partition is cached, return the cache locations
     val cached = getCacheLocs(rdd)(partition)
     if (cached.nonEmpty) {
+      // println("RDD CachedLocations get: " + rdd.name + " " + rdd.toString + " " + cached.toList)
       return cached
     }
     // If the RDD has some placement preferences (as is the case for input RDDs), get those
     val rddPrefs = rdd.preferredLocations(rdd.partitions(partition)).toList
     if (rddPrefs.nonEmpty) {
+      // println("RDD PreferredLocations get: " + rdd.toString() + " " + rdd.name + " " + rddPrefs)
       return rddPrefs.map(TaskLocation(_))
     }
 
@@ -1555,10 +1566,13 @@ class DAGScheduler(
     rdd.dependencies.foreach {
       case n: NarrowDependency[_] =>
         for (inPart <- n.getParents(partition)) {
+          // println("Get locs for narrow dependency: " + rdd)
           val locs = getPreferredLocsInternal(n.rdd, inPart, visited)
           if (locs != Nil) {
+            // println("Get locs for narrow dependency: " + rdd + " get the result")
             return locs
           }
+          // println("Get locs for narrow dependency: " + rdd + " the result is nil")
         }
 
       case _ =>

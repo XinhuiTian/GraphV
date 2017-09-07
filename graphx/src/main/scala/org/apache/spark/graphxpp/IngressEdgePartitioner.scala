@@ -20,12 +20,13 @@ import scala.reflect.ClassTag
 
 // scalastyle:off println
 
+import org.apache.spark.HashPartitioner
 import org.apache.spark.graphxpp.collection.PrimitiveKeyOpenHashMap
 import org.apache.spark.graphxpp.impl._
+import org.apache.spark.graphxpp.impl.RoutingTablePartition._
 import org.apache.spark.graphxpp.utils.collection.GraphXPrimitiveKeyOpenHashMap
-import org.apache.spark.HashPartitioner
 import org.apache.spark.rdd.RDD
-import org.apache.spark.util.collection.{BitSet, OpenHashSet, PrimitiveVector}
+import org.apache.spark.util.collection.{BitSet, OpenHashSet}
 
 /**
  * Created by XinhuiTian on 17/2/14.
@@ -380,6 +381,7 @@ case class IngressBiDiPartition(
   }
   */
 
+  /*
   // from edge partitions, build the edgeWithVertices partitions
   def buildInEdges[ED: ClassTag](rdd: RDD[(PartitionID, SimpleEdgePartition[ED])]):
   RDD[(PartitionID, SimpleEdgeWithVertexPartition[ED])] = {
@@ -395,58 +397,85 @@ case class IngressBiDiPartition(
     // compute in degrees for each vertex,
     // for vertex with degrees greater than the threshold,
     // change the pid
-    val newEdgeParts = ecut_in_edges.mapPartitions { iter =>
+    // TXH: 3.13 remove the inMaster hashMap
+    val newEdgeParts = ecut_in_edges.mapPartitionsWithIndex { (epid, iter) =>
       val messages = iter.toArray
       // the inDegress can store all the vertices to this partition
-      val inDegrees = new PrimitiveKeyOpenHashMap[VertexId, Int]
-      val inMasters = new PrimitiveKeyOpenHashMap[VertexId, Byte]
+      val inDegrees = new PrimitiveKeyOpenHashMap[VertexId, (Int, Byte)]
+      val inEdges = new PrimitiveVector[Edge[ED]]
+      val routingMsgs = new PrimitiveVector[(Long, Int)]
+      val highDegreeMirrors = new PrimitiveVector[(Int, Long)]
+      // val inMasters = new PrimitiveKeyOpenHashMap[VertexId, Byte]
 
       // count the indegrees
       messages.foreach { message =>
-        inDegrees.changeValue (message._2.dstId, 1, _ + 1)
+        inDegrees.changeValue (message._2.dstId, (1, 0x0), { m => (m._1 + 1, m._2) })
       }
 
       // set the mirror parts of each vertex, if one vertex v has a mirror on pid p,
       // the pos p of v's bitset should be set to 1
-      val newEdges = messages.map { message =>
+      messages.foreach { message =>
         // case of in low degree vertices
-        if (inDegrees (message._2.dstId) <= threshold) {
-          inMasters.changeValue(message._2.dstId, 0x2, {b: Byte => (b | 0x2).toByte})
+        val inDegree = inDegrees(message._2.dstId)._1
+        if (inDegree <= threshold) {
+          inDegrees.changeValue(message._2.dstId, (inDegree, 0x2),
+            { m => (m._1, (m._2 | 0x2).toByte) })
           // inMasters.changeValue(message._2.srcId, )
-          (message._1, message._2, message._2.srcId)
+          // (message._1, message._2, message._2.srcId)
+          inEdges += message._2
+          routingMsgs += (message._2.srcId, message._1)
         } else {
           // will be handled in buildOutEdges
-          inMasters.changeValue(message._2.dstId, 0x0, {b: Byte => b })
-          (-1, Edge(-1, -1, null.asInstanceOf[ED]), -1L)
+          // should record this as high degree vertex in srcId's partition
+          inDegrees.changeValue(message._2.dstId, (0, 0x0), { m => (0, 0x0) })
+          val srcPid = ((message._2.srcId * mixingPrime) % partNum).toInt
+          // (srcPid, null.asInstanceOf[Edge[ED]], message._2.dstId)
+          highDegreeMirrors += (srcPid, message._2.dstId)
         }
       }
-      Iterator((newEdges, inMasters))
+
+      // need to be repartitioned and merged to srcId's masterMap
+      // val highDegreeMirrors = newEdges.filter(_._2 == null).map(m => (m._1, m._3))
+
+      Iterator((newEdges, inDegrees))
     }.cache()
 
     val vertexParts = newEdgeParts
       .mapPartitionsWithIndex((pid, iter) => Iterator((pid, iter.next._2)))
 
+    // the high degree vertices and where they act as in edge mirrors
+    // these in edge mirrors should be compute after all in low degree
+    // vertices have been computed
+    val highDegreeVertices = newEdgeParts
+      .flatMap(_._1.filter(_._2 == null)).map(record => (record._1, record._3))
+      .partitionBy(new HashPartitioner(partNum))
+
+    val newVertexParts = vertexParts.zipPartitions(highDegreeVertices) {
+      (vertexPartIter, highDegreeIter) =>
+        val (pid, vertexPart) = vertexPartIter.next()
+        highDegreeIter.foreach(v => vertexPart.update(v._2, 0x4))
+        Iterator((pid, vertexPart))
+    }
+
     val routingTableParts = newEdgeParts
-      .flatMap(_._1.filter(_._1 != -1).map(edge => (edge._3, edge._1)))
+      .flatMap(_._1.filter(_._2 != null).map(edge => (edge._3, edge._1)))
       .partitionBy(new HashPartitioner(partNum))
       .mapPartitionsWithIndex { (vpid, iter) =>
         val messages = iter.toArray
         val pid2vid = Array.fill(numPartitions)(new PrimitiveVector[VertexId])
-        val masters = new OpenHashSet[VertexId]
         val masterPid = vpid
 
         for (msg <- iter) {
           val vid = msg._1
           val pid = msg._2
           pid2vid (pid) += vid
-          masters.add (vid)
           // println(s"pid: $vpid, vid: $vid")
         }
 
         val p2v = pid2vid.map { vids => vids.trim ().array}
         // p2v.foreach{ vid => print("mirrors: ");
         // vid.iterator.foreach(m => print(s"$m ")); println}
-        p2v.update (masterPid, masters.iterator.toArray)
+        // p2v.update (masterPid, masters.iterator.toArray)
         Iterator((vpid, p2v))
     }
 
@@ -465,12 +494,6 @@ case class IngressBiDiPartition(
       .flatMap(_._1.filter(_._1 != -1).map(edge => (edge._1, edge._2)))
       // .partitionBy(new HashPartitioner(partNum)) // no need to repartition here
       .map{ _._2 }
-
-    edgeParts.foreachPartition { edgePart =>
-      println("In Edge Part")
-      // edgePart.foreach(println)
-      // println
-    }
 
     // TODO: how to decrease the overhead here.
     val graphParts = GraphImpl.buildSimpleFromEdges(edgeParts)
@@ -604,52 +627,215 @@ case class IngressBiDiPartition(
       }
     graphParts
 
+  } */
+
+  def buildAllEdges[ED : ClassTag](rdd: RDD[(PartitionID, SimpleEdgePartition[ED])]):
+  RDD[(PartitionID, SimpleEdgeWithVertexPartition[ED])] = {
+    val partNum = if (numPartitions > 0) numPartitions else rdd.partitions.size
+    val partitioner = new HashPartitioner(partNum)
+
+    // first partition the edges based on dstId (in edges partitioning)
+    // repartition edges
+    val ecut_edges = rdd.flatMap { part =>
+      part._2.edges.flatMap { e =>
+        Iterator((partitioner.getPartition(e.dstId), (e, 0x0)), // for dstIds
+          (partitioner.getPartition(e.srcId), (e, 0x1))) } // for srcIds
+    }.partitionBy (new HashPartitioner (partNum))
+
+    /*
+    println("partitioned_edges")
+    ecut_edges.foreachPartition { edges => edges.foreach(println); println }
+    println
+    */
+
+    val tmp_edges = ecut_edges.mapPartitions { iter =>
+      // get all the edges assigned for this partition
+      val messages = iter.toArray
+      // store the in and out degree of each src and dst
+      val degrees = new PrimitiveKeyOpenHashMap[VertexId, (Int, Int)]
+      // store the edges in this partition, may have duplicated edges
+      // vertex types:
+      // 0x1: out high degree
+      // 0x2: in high degree
+      // 0x4: out low degree
+      // 0x8: in low degree
+      // 0x10: src high mirror
+      // 0x20: dst high mirror
+      // 0x40: src as master
+      // 0x80: dst as master
+      val edges = Array.fill(numPartitions)(new PrimitiveKeyOpenHashMap[Edge[ED], Byte])
+      // routing msgs for mirrors in this edge partition
+      // val routingMsgs = new PrimitiveVector[(Long, Int)]
+      // val masters = new PrimitiveKeyOpenHashMap[VertexId, Byte]
+
+      messages.foreach { msg =>
+        if (msg._2._2 == 0x0) {
+          degrees.changeValue (msg._2._1.dstId, (1, 0), {m => (m._1 + 1, m._2)})
+        } else {
+          degrees.changeValue (msg._2._1.srcId, (0, 1), {m => (m._1, m._2 + 1)})
+        }
+      }
+
+      // println("Compute Degrees")
+      // degrees.foreach(println)
+
+      val inEdges = messages.filter(_._2._2 == 0x0).map(_._2._1)
+
+      /*
+      println("in_edges")
+      inEdges.foreach{ edge => println(edge) }
+      println
+      */
+
+      inEdges.foreach { edge =>
+        val inDegree = degrees (edge.dstId)._1
+        // val outDegree = degrees (edge.dstId)._2
+        if (inDegree <= threshold) {
+          val pid = partitioner.getPartition(edge.dstId)
+          edges(pid).update(edge, 0x88.toByte)
+          // routingMsgs +=(msg._2._1.srcId, msg._1)
+        } else {
+          val pid = partitioner.getPartition(edge.srcId)
+          edges(pid).update(edge, 0x60.toByte)
+        }
+      }
+
+      val outEdges = messages.filter(_._2._2 == 0x1).map(_._2._1)
+
+      /*
+      println("out_edges")
+      outEdges.foreach{ edge => println(edge) }
+      println
+      */
+
+      outEdges.foreach { edge =>
+        // val inDegree = degrees (edge.dstId)._1
+        // println("outEdge foreach: edge: " + edge)
+
+        val outDegree = degrees (edge.srcId)._2
+        if (outDegree <= threshold) {
+          val pid = partitioner.getPartition(edge.srcId)
+          edges(pid).changeValue(edge, 0x44.toByte, b => (b | 0x44.toByte).toByte)
+        } else {
+          val pid = partitioner.getPartition(edge.dstId)
+          edges(pid).changeValue(edge, 0x90.toByte, b => (b | 0x90.toByte).toByte)
+        }
+      }
+
+      val allEdges = edges.zipWithIndex.flatMap {edgeMap =>
+        edgeMap._1.map(edge => (edgeMap._2, edge))
+      }
+
+      allEdges.toIterator
+    }
+
+    println("tmp_edges")
+    // tmp_edges.foreach{ edge => printf("%d (%s, %h)\n", edge._1, edge._2._1, edge._2._2)}
+
+    val all_edges = tmp_edges.forcePartitionBy(new HashPartitioner(partNum))
+      .mapPartitionsWithIndex { (pid, iter) =>
+      val edgeMsgs = iter.map(_._2).toArray
+      val edgeMap = new PrimitiveKeyOpenHashMap[Edge[ED], Byte]
+      val highMasters = new OpenHashSet[VertexId]
+      edgeMsgs.foreach { msg =>
+        edgeMap.changeValue(msg._1, msg._2, b => (b | msg._2).toByte)
+      }
+
+      // filter high-high out edges
+      val filteredEdges = edgeMap.iterator.filter(_._2 != 0x60.toByte).toArray
+
+      Iterator((pid, filteredEdges))
+    }.cache()
+
+    println("All_edges")
+    // all_edges.foreach{ edges => edges._2.foreach(e => printf("%s %h\n", e._1, e._2)); println }
+
+    // compute the routing msgs for each vertex
+    // possible cases:
+    // 1. 0x44: src as low degree master, dst is low:   src: 0x1, dst: 0x8
+    // 2. 0x64: src as low degree master, dst is high:  src: 0x1, dst: 0x80
+    // 3. 0x88: dst as low degree master, src is low:   src: 0x2, dst: 0x10
+    // 4. 0x98: dst as low degree master, src is high:  src: 0x8, dst: 0x10
+    // 5. 0x90: dst as high degree master, src is high: src: 0x8, dst: 0x40
+    // for each vertex, the type attrs are :
+    // position, degree, master or mirror
+    // 0x1: src & low & master
+    // 0x2: src & low & mirror
+    // 0x4: dst & low & master
+    // 0x8: dst & low & mirror
+    // 0x10: src & high & master
+    // 0x20: src & high & mirror
+    // 0x40: dst & high & master
+    // 0x80: dst & high & mirror
+    // a vertex in one partition can be both master and mirror
+    val tmp_vertices = all_edges.mapPartitions { iter =>
+      val edges = iter.toArray
+      edges.flatMap { edgePart =>
+        // val pid = (edgePart._1 & 0x3FFFFFFF)
+        val pid = edgePart._1
+        val vertices = new PrimitiveKeyOpenHashMap[VertexId, Byte]
+        edgePart._2.foreach { edge =>
+          edge._2 match {
+            case 0x44 => vertices.changeValue(edge._1.srcId, 0x1.toByte,
+              (b: Byte) => (b | 0x1.toByte).toByte)
+              vertices.changeValue(edge._1.dstId, 0x20.toByte,
+                (b: Byte) => (b | 0x20.toByte).toByte)
+            case 0x64 => vertices.changeValue(edge._1.srcId, 0x1.toByte,
+              (b: Byte) => (b | 0x1.toByte).toByte)
+              vertices.changeValue(edge._1.dstId, 0x80.toByte,
+                (b: Byte) => (b | 0x80.toByte).toByte)
+            case 0x88 => vertices.changeValue(edge._1.srcId, 0x2.toByte,
+              (b: Byte) => (b | 0x2.toByte).toByte)
+              vertices.changeValue(edge._1.dstId, 0x10.toByte,
+                (b: Byte) => (b | 0x10.toByte).toByte)
+            case 0x98 => vertices.changeValue(edge._1.srcId, 0x8.toByte,
+              (b: Byte) => (b | 0x8.toByte).toByte)
+              vertices.changeValue(edge._1.dstId, 0x10.toByte,
+                (b: Byte) => (b | 0x10.toByte).toByte)
+            case 0x90 => vertices.changeValue(edge._1.srcId, 0x8.toByte,
+              (b: Byte) => (b | 0x8.toByte).toByte)
+              vertices.changeValue(edge._1.dstId, 0x40.toByte,
+                (b: Byte) => (b | 0x40.toByte).toByte)
+            case _ => new NotImplementedError()
+          }
+        }
+
+        vertices.iterator.map(v => (v._1, (pid, v._2)))
+      }.iterator
+    }.forcePartitionBy(new HashPartitioner(partNum))
+
+    val vertices = tmp_vertices.mapPartitionsWithIndex { (pid, iter) =>
+      val routingTable = fromMsgs(partNum, iter)
+      val masters = new PrimitiveKeyOpenHashMap[VertexId, Byte]
+      routingTable.iterator.foreach { vpos =>
+        masters.changeValue(vpos._1, vpos._2, (b: Byte) => (b | vpos._2).toByte)
+      }
+      Iterator((pid, (masters.iterator.toArray, routingTable)))
+    }
+
+    println("routing table")
+
+    // vertices.foreach { iter => iter._2._1.foreach(v => printf("%s %x\n", v._1, v._2)); println }
+
+    val newGraph = all_edges.zipPartitions(vertices) {
+      (edgePartIter, vertexPartIter) =>
+        val (pid, edgePart) = edgePartIter.next()
+        val (_, vertexPart) = vertexPartIter.next()
+        Iterator((pid, new SimpleEdgeWithVertexPartition(edgePart, vertexPart._1, vertexPart._2)))
+    }
+
+    println("edges")
+    // newGraph.foreach { graph => graph._2.edges.foreach(println); println}
+    println("masters")
+    // newGraph.foreach { graph => graph._2.masters.foreach(println); println}
+
+    newGraph
   }
 
   def fromEdgesWithVertices[ED : ClassTag](
     rdd: RDD[(PartitionID, SimpleEdgePartition[ED])]):
   RDD[(PartitionID, SimpleEdgeWithVertexPartition[ED])] = {
-    rdd.cache()
-    val inEdgeParts = buildInEdges(rdd).cache()
-
-    // should be small
-    val inHighVertices = inEdgeParts.flatMap(part =>
-      part._2.masters.filter(bit => (bit._2 == 0x10 || bit._2 == 0x01) ).map(_._1)).collect()
-
-    println("In High Degree vertices: " + inHighVertices.length)
-
-    val outEdgeParts = buildOutEdges(rdd).cache()
-
-    val allEdgeParts = outEdgeParts.zipPartitions(inEdgeParts) {
-      (outEdgePartIter, inEdgePartIter) =>
-        val (pid, outEdgePart) = outEdgePartIter.next()
-        val (_, inEdgePart) = inEdgePartIter.next()
-        outEdgePart.edges.iterator.foreach(edge => inEdgePart.edges.add(edge))
-        val newEdges = inEdgePart.edges
-        outEdgePart.masters.iterator.foreach{ vert =>
-          inEdgePart.masters.changeValue(vert._1, vert._2, {b: Byte => (b | vert._2).toByte})
-        }
-        val newMasters = inEdgePart.masters
-        Iterator((pid, new SimpleEdgeWithVertexPartition(newEdges,
-          newMasters, inEdgePart.inRoutingTable, outEdgePart.outRoutingTable)))
-    }
-    /*
-    allEdgeParts.foreach { edgePart =>
-      println("All edges")
-      edgePart._2.edges.iterator.foreach(println)
-      println
-    }
-    */
-
-    /*
-    allEdgeParts.foreach { edgePart =>
-      println("All vertices")
-      edgePart._2.masters.iterator.foreach(println)
-      println
-    }
-    */
-
-    allEdgeParts
+    buildAllEdges(rdd)
   }
 }
 

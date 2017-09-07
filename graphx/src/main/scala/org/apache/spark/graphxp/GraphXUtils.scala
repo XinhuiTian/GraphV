@@ -21,8 +21,10 @@ import scala.reflect.ClassTag
 
 import org.apache.spark.SparkConf
 
-import org.apache.spark.graphx.impl._
+import org.apache.spark.graphx.TripletFields
+import org.apache.spark.graphxp.impl._
 import org.apache.spark.graphxp.util.collection
+import org.apache.spark.graphxp.util.collection.GraphXPrimitiveKeyOpenHashMap
 import org.apache.spark.util.BoundedPriorityQueue
 import org.apache.spark.util.collection.{BitSet, OpenHashSet}
 
@@ -35,14 +37,14 @@ object GraphXUtils {
     conf.registerKryoClasses(Array(
       classOf[Edge[Object]],
       classOf[(VertexId, Object)],
-      classOf[impl.EdgePartition[Object, Object]],
+      classOf[EdgePartition[Object, Object]],
       classOf[BitSet],
       classOf[VertexIdToIndexMap],
       classOf[VertexAttributeBlock[Object]],
       classOf[PartitionStrategy],
       classOf[BoundedPriorityQueue[Object]],
       classOf[EdgeDirection],
-      classOf[collection.GraphXPrimitiveKeyOpenHashMap[VertexId, Int]],
+      classOf[GraphXPrimitiveKeyOpenHashMap[VertexId, Int]],
       classOf[OpenHashSet[Int]],
       classOf[OpenHashSet[Long]]))
   }
@@ -50,7 +52,7 @@ object GraphXUtils {
   /**
    * A proxy method to map the obsolete API to the new one.
    */
-  private[graphx] def mapReduceTriplets[VD: ClassTag, ED: ClassTag, A: ClassTag](
+  private[graphxp] def mapReduceTriplets[VD: ClassTag, ED: ClassTag, A: ClassTag](
       g: Graph[VD, ED],
       mapFunc: EdgeTriplet[VD, ED] => Iterator[(VertexId, A)],
       reduceFunc: (A, A) => A,

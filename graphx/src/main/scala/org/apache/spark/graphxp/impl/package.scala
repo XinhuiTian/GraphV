@@ -20,5 +20,5 @@ package org.apache.spark.graphxp
 import org.apache.spark.util.collection.OpenHashSet
 
 package object impl {
-  private[graphx] type VertexIdToIndexMap = OpenHashSet[VertexId]
+  private[graphxp] type VertexIdToIndexMap = OpenHashSet[VertexId]
 }

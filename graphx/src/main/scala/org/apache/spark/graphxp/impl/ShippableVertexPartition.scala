@@ -21,30 +21,32 @@ import scala.reflect.ClassTag
 
 import org.apache.spark.graphxp
 
-import org.apache.spark.graphx._
+import org.apache.spark.graphxp._
 import org.apache.spark.graphxp.util.collection
+import org.apache.spark.graphxp.util.collection.GraphXPrimitiveKeyOpenHashMap
 import org.apache.spark.util.collection.{BitSet, PrimitiveVector}
 
 /** Stores vertex attributes to ship to an edge partition. */
-private[graphx]
-class VertexAttributeBlock[VD: ClassTag](val vids: Array[VertexId], val attrs: Array[VD])
+// changed by TXH, change the routingtable to a localroutingtable structure
+private[graphxp]
+class VertexAttributeBlock[VD: ClassTag](val localIds: Array[Int], val attrs: Array[VD])
   extends Serializable {
-  def iterator: Iterator[(VertexId, VD)] =
-    (0 until vids.length).iterator.map { i => (vids(i), attrs(i)) }
+  def iterator: Iterator[(Int, VD)] =
+    (0 until localIds.length).iterator.map { i => (localIds(i), attrs(i)) }
 }
 
-private[graphx]
+private[graphxp]
 object ShippableVertexPartition {
   /** Construct a `ShippableVertexPartition` from the given vertices without any routing table. */
   def apply[VD: ClassTag](iter: Iterator[(VertexId, VD)]): ShippableVertexPartition[VD] =
-    apply(iter, RoutingTablePartition.empty, null.asInstanceOf[VD], (a, b) => a)
+    apply(iter, LocalRoutingTablePartition.empty, null.asInstanceOf[VD], (a, b) => a)
 
   /**
    * Construct a `ShippableVertexPartition` from the given vertices with the specified routing
    * table, filling in missing vertices mentioned in the routing table using `defaultVal`.
    */
   def apply[VD: ClassTag](
-      iter: Iterator[(VertexId, VD)], routingTable: RoutingTablePartition, defaultVal: VD)
+      iter: Iterator[(VertexId, VD)], routingTable: LocalRoutingTablePartition, defaultVal: VD)
     : ShippableVertexPartition[VD] =
     apply(iter, routingTable, defaultVal, (a, b) => a)
 
@@ -53,10 +55,11 @@ object ShippableVertexPartition {
    * table, filling in missing vertices mentioned in the routing table using `defaultVal`,
    * and merging duplicate vertex attribute with mergeFunc.
    */
+
   def apply[VD: ClassTag](
-      iter: Iterator[(VertexId, VD)], routingTable: RoutingTablePartition, defaultVal: VD,
+      iter: Iterator[(VertexId, VD)], routingTable: LocalRoutingTablePartition, defaultVal: VD,
       mergeFunc: (VD, VD) => VD): ShippableVertexPartition[VD] = {
-    val map = new collection.GraphXPrimitiveKeyOpenHashMap[VertexId, VD]
+    val map = new GraphXPrimitiveKeyOpenHashMap[VertexId, VD]
     // Merge the given vertices using mergeFunc
     iter.foreach { pair =>
       map.setMerge(pair._1, pair._2, mergeFunc)
@@ -68,6 +71,38 @@ object ShippableVertexPartition {
 
     new ShippableVertexPartition(map.keySet, map._values, map.keySet.getBitSet, routingTable)
   }
+  /*
+  def apply[VD: ClassTag](
+      iter: Iterator[(VertexId, VD)], routingTable: LocalRoutingTablePartition, defaultVal: VD,
+      mergeFunc: (VD, VD) => VD): ShippableVertexPartition[VD] = {
+    // val map = new GraphXPrimitiveKeyOpenHashMap[VertexId, VD]
+    var currentVertexId = -1
+    val map = new PrimitiveVector[VertexId]
+    val values = new PrimitiveVector[VD]
+    val global2local = new GraphXPrimitiveKeyOpenHashMap[VertexId, Int]
+
+    // Merge the given vertices using mergeFunc
+    iter.foreach { pair =>
+      global2local.changeValue(pair._1,
+        { currentVertexId += 1; map += pair._1; values += pair._2; currentVertexId}, identity)
+    }
+    // Fill in missing vertices mentioned in the routing table
+    routingTable.iterator.foreach { vid =>
+      // map.changeValue(vid, defaultVal, identity)
+      global2local.changeValue(vid,
+      { currentVertexId += 1; map += vid; values += defaultVal; currentVertexId}, identity)
+    }
+
+    val mask = new BitSet(currentVertexId + 1)
+    mask.setUntil(currentVertexId + 1)
+
+    val l2lRoutingTable = routingTable.toL2LRoutingTable(global2local)
+
+    new ShippableVertexPartition(map.trim().toArray, values.trim.toArray, mask, l2lRoutingTable)
+  }
+  */
+
+
 
   import scala.language.implicitConversions
 
@@ -94,20 +129,23 @@ object ShippableVertexPartition {
 /**
  * A map from vertex id to vertex attribute that additionally stores edge partition join sites for
  * each vertex attribute, enabling joining with an [[graphxp.EdgeRDD]].
+ *
+ * changed by TXH, change the openHashSet to a local array
  */
-private[graphx]
+private[graphxp]
 class ShippableVertexPartition[VD: ClassTag](
     val index: VertexIdToIndexMap,
+    // val index: Array[VertexId],
     val values: Array[VD],
     val mask: BitSet,
-    val routingTable: RoutingTablePartition)
+    val routingTable: LocalRoutingTablePartition)
   extends VertexPartitionBase[VD] {
 
   // var localIndex: VertexIdToIndexMap = null
   // var localValues: Array[VD] = Array.empty[VD]
 
   /** Return a new ShippableVertexPartition with the specified routing table. */
-  def withRoutingTable(_routingTable: RoutingTablePartition): ShippableVertexPartition[VD] = {
+  def withRoutingTable(_routingTable: LocalRoutingTablePartition): ShippableVertexPartition[VD] = {
     new ShippableVertexPartition(index, values, mask, _routingTable)
   }
 
@@ -120,17 +158,17 @@ class ShippableVertexPartition[VD: ClassTag](
       shipSrc: Boolean, shipDst: Boolean): Iterator[(PartitionID, VertexAttributeBlock[VD])] = {
     Iterator.tabulate(routingTable.numEdgePartitions) { pid =>
       val initialSize = if (shipSrc && shipDst) routingTable.partitionSize(pid) else 64
-      val vids = new PrimitiveVector[VertexId](initialSize)
+      val localIds = new PrimitiveVector[Int](initialSize)
       val attrs = new PrimitiveVector[VD](initialSize)
       var i = 0
       routingTable.foreachWithinEdgePartition(pid, shipSrc, shipDst) { vid =>
-        if (isDefined(vid)) {
-          vids += vid
-          attrs += this(vid)
+        if (isDefined(vid._1)) {
+          localIds += vid._2
+          attrs += this(vid._1)
         }
         i += 1
       }
-      (pid, new VertexAttributeBlock(vids.trim().array, attrs.trim().array))
+      (pid, new VertexAttributeBlock(localIds.trim().array, attrs.trim().array))
     }
   }
 
@@ -139,22 +177,23 @@ class ShippableVertexPartition[VD: ClassTag](
    * contains the visible vertex ids from the current partition that are referenced in the edge
    * partition.
    */
-  def shipVertexIds(): Iterator[(PartitionID, Array[VertexId])] = {
+  // changed by TXH
+  def shipVertexIds(): Iterator[(PartitionID, Array[Int])] = {
     Iterator.tabulate(routingTable.numEdgePartitions) { pid =>
-      val vids = new PrimitiveVector[VertexId](routingTable.partitionSize(pid))
+      val localVids = new PrimitiveVector[Int](routingTable.partitionSize(pid))
       var i = 0
       routingTable.foreachWithinEdgePartition(pid, true, true) { vid =>
-        if (isDefined(vid)) {
-          vids += vid
+        if (isDefined(vid._1)) {
+          localVids += vid._2
         }
         i += 1
       }
-      (pid, vids.trim().array)
+      (pid, localVids.trim().array)
     }
   }
 }
 
-private[graphx] class ShippableVertexPartitionOps[VD: ClassTag](self: ShippableVertexPartition[VD])
+private[graphxp] class ShippableVertexPartitionOps[VD: ClassTag](self: ShippableVertexPartition[VD])
   extends VertexPartitionBaseOps[VD, ShippableVertexPartition](self) {
 
   def withIndex(index: VertexIdToIndexMap): ShippableVertexPartition[VD] = {
