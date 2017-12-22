@@ -145,6 +145,7 @@ class GraphXPrimitiveKeyOpenHashMap[@specialized(Long, Int) K: ClassTag,
   protected var grow = (newCapacity: Int) => {
     _oldValues = _values
     _values = new Array[V](newCapacity)
+
   }
 
   protected var move = (oldPos: Int, newPos: Int) => {

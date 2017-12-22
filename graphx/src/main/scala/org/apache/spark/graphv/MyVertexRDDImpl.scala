@@ -48,7 +48,7 @@ class MyVertexRDDImpl[VD: ClassTag, ED: ClassTag] private[graphv]
       messages: RDD[(VertexId, VD2)], reduceFunc: (VD2, VD2) => VD2): MyVertexMessage[VD2] = {
    //  val localMsgs = messages.filter(_._2._2 == true).map(msg => (msg._1, msg._2._1))
    //  val remoteMsgs = messages.filter(_._2._2 == false).map(msg => (msg._1, msg._2._1))
-    val shuffled = messages.partitionBy (new HashPartitioner (partitionsRDD.getNumPartitions)) //60ms  remove cache()
+    val shuffled = messages.partitionBy (new HashPartitioner (partitionsRDD.getNumPartitions)) // 60ms remove cache()
     val parts = partitionsRDD.zipPartitions (shuffled, true) {
       (thisIter, msgIter) =>
       thisIter.map (_.aggregateUsingIndex (msgIter, reduceFunc))
@@ -63,19 +63,19 @@ class MyVertexRDDImpl[VD: ClassTag, ED: ClassTag] private[graphv]
   }
 
   override def aggregateLocalUsingIndex[VD2: ClassTag](
-      messages: RDD[AllMsgs[VD2]], reduceFunc: (VD2, VD2) => VD2): MyLocalVertexMessage[VD2] = {
+      messages: RDD[(VertexId, VD2)], reduceFunc: (VD2, VD2) => VD2): MyLocalVertexMessage[VD2] = {
     val startTime = System.currentTimeMillis()
     messages.cache()
-    val localMsgs = messages.flatMap(_.localMsgs)
-    println("localMsgs")
+    // val localMsgs = messages.flatMap(_.localMsgs)
+    // println("localMsgs")
     // localMsgs.foreach(println)
-    val shuffled = messages.flatMap(_.RemoteMsgs).partitionBy (new HashPartitioner (partitionsRDD.getNumPartitions)) //60ms  remove cache()
+    val shuffled = messages.partitionBy(new HashPartitioner (partitionsRDD.getNumPartitions)) //60ms  remove cache()
     // shuffled.count()
     // println("Shuffle Time: " + (System.currentTimeMillis() - startTime))
     val midTime = System.currentTimeMillis()
-    val parts = partitionsRDD.zipPartitions (shuffled, localMsgs, true) {
-      (thisIter, shuffleMsgIter, localMsgIter) =>
-      thisIter.map (_.aggregateLocalUsingIndex (shuffleMsgIter, localMsgIter, reduceFunc))
+    val parts = partitionsRDD.zipPartitions (shuffled, true) {
+      (thisIter, shuffleMsgIter) =>
+      thisIter.map (_.aggregateLocalUsingIndex(shuffleMsgIter, reduceFunc))
     } //add cache make it fast  important!!
     // parts.count()
     // println("local aggre time: " + (System.currentTimeMillis() - midTime))
@@ -187,7 +187,8 @@ class MyVertexRDDImpl[VD: ClassTag, ED: ClassTag] private[graphv]
 
   // preservesPartitioning: get the zipPartition cached?
   override def localLeftZipJoin[VD2: ClassTag, VD3: ClassTag]
-  (other: MyLocalVertexMessage[VD2], needActive: Boolean = false)(f: (VertexId, VD, Option[VD2]) => VD3): MyVertexRDD[VD3, ED] = {
+  (other: MyLocalVertexMessage[VD2], needActive: Boolean = false)
+    (f: (VertexId, VD, Option[VD2]) => VD3): MyVertexRDD[VD3, ED] = {
     val newPartitionsRDD = partitionsRDD.zipPartitions (
       other.partitionsRDD
     ){(thisIter, otherIter) =>

@@ -41,6 +41,8 @@ private[spark] object InternalAccumulator {
   val UPDATED_BLOCK_STATUSES = METRICS_PREFIX + "updatedBlockStatuses"
   val TEST_ACCUM = METRICS_PREFIX + "testAccumulator"
 
+  val AGGRE_TIME = METRICS_PREFIX + "aggreTime"
+
   // scalastyle:off
 
   // Names of shuffle read metrics

@@ -47,16 +47,10 @@ object MyGraphLoader extends Logging {
     val filteredLines = lines.filter(line => !line.isEmpty && line(0) != '#')
 
 
-    val mid_data = filteredLines.map (line => {
+    val mid_data = filteredLines.flatMap (line => {
       val parts = line.split ("\\s+")
-      (parts(0).toLong, parts(1).toLong)
-    }) ++ filteredLines.map (line => {
-      // all the vertices for each partitions
-      val parts = line.split ("\\s+")
-      (parts(1).toLong, -1L)
-    }) ++ filteredLines.map (line => {
-      val parts = line.split ("\\s+")
-      (parts(0).toLong, -1L)
+      Iterator((parts(0).toLong, parts(1).toLong),
+        (parts(1).toLong, -1L), (parts(0).toLong, -1L))
     })
 
     // mid_data.foreach(println)

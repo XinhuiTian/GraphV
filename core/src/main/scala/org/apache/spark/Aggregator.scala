@@ -58,6 +58,8 @@ case class Aggregator[K, V, C] (
       c.taskMetrics().incMemoryBytesSpilled(map.memoryBytesSpilled)
       c.taskMetrics().incDiskBytesSpilled(map.diskBytesSpilled)
       c.taskMetrics().incPeakExecutionMemory(map.peakMemoryUsedBytes)
+      // txh
+      c.taskMetrics().incAggreTime(map.aggreTime)
     }
   }
 }

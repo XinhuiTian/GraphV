@@ -61,7 +61,8 @@ abstract class MyGraph[VD: ClassTag, ED: ClassTag] protected() extends Serializa
   : MyGraph[VD, ED]
 
   // txh adds, used specially for pregel.
-  def joinLocalVertices[U: ClassTag](table: RDD[(Int, U)], needActive: Boolean)(mapFunc: (VertexId, VD, U) => VD)
+  def joinLocalVertices[U: ClassTag](table: RDD[(Int, U)], needActive: Boolean)(
+      mapFunc: (VertexId, VD, U) => VD)
   : MyGraph[VD, ED]
 
   def outerJoinLocalVertices[U: ClassTag, VD2: ClassTag]

@@ -56,6 +56,9 @@ class TaskMetrics private[spark] () extends Serializable {
   private val _peakExecutionMemory = new LongAccumulator
   private val _updatedBlockStatuses = new BlockStatusesAccumulator
 
+  // txh
+  private val _aggreTime = new LongAccumulator
+
   /**
    * Time taken on the executor to deserialize this task.
    */
@@ -99,6 +102,9 @@ class TaskMetrics private[spark] () extends Serializable {
    */
   def peakExecutionMemory: Long = _peakExecutionMemory.sum
 
+  // txh
+  def aggreTime: Long = _aggreTime.sum
+
   /**
    * Storage statuses of any blocks that have been updated as a result of this task.
    */
@@ -125,6 +131,11 @@ class TaskMetrics private[spark] () extends Serializable {
     _updatedBlockStatuses.setValue(v)
   private[spark] def setUpdatedBlockStatuses(v: Seq[(BlockId, BlockStatus)]): Unit =
     _updatedBlockStatuses.setValue(v.asJava)
+
+  // txh
+  private[spark] def setAggreTime(v: Long): Unit = _aggreTime.setValue(v)
+  private[spark] def incAggreTime(v: Long): Unit = _aggreTime.add(v)
+
 
   /**
    * Metrics related to reading data from a [[org.apache.spark.rdd.HadoopRDD]] or from persisted
@@ -196,6 +207,7 @@ class TaskMetrics private[spark] () extends Serializable {
     DISK_BYTES_SPILLED -> _diskBytesSpilled,
     PEAK_EXECUTION_MEMORY -> _peakExecutionMemory,
     UPDATED_BLOCK_STATUSES -> _updatedBlockStatuses,
+    AGGRE_TIME -> _aggreTime,
     shuffleRead.REMOTE_BLOCKS_FETCHED -> shuffleReadMetrics._remoteBlocksFetched,
     shuffleRead.LOCAL_BLOCKS_FETCHED -> shuffleReadMetrics._localBlocksFetched,
     shuffleRead.REMOTE_BYTES_READ -> shuffleReadMetrics._remoteBytesRead,

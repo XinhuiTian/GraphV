@@ -123,6 +123,10 @@ class ExternalAppendOnlyMap[K, V, C](
    */
   private[collection] def numSpills: Int = spilledMaps.size
 
+  // txh
+  private var _aggreTime: Long = 0L
+  def aggreTime: Long = _aggreTime
+
   /**
    * Insert the given key and value into the map.
    */
@@ -151,6 +155,9 @@ class ExternalAppendOnlyMap[K, V, C](
       if (hadVal) mergeValue(oldVal, curEntry._2) else createCombiner(curEntry._2)
     }
 
+    // txh
+    val startTime = System.currentTimeMillis()
+
     while (entries.hasNext) {
       curEntry = entries.next()
       val estimatedSize = currentMap.estimateSize()
@@ -163,6 +170,9 @@ class ExternalAppendOnlyMap[K, V, C](
       currentMap.changeValue(curEntry._1, update)
       addElementsRead()
     }
+    // txh
+    val endTime = System.currentTimeMillis()
+    _aggreTime = endTime - startTime
   }
 
   /**
@@ -452,7 +462,7 @@ class ExternalAppendOnlyMap[K, V, C](
       s"    all batch offsets = ${batchOffsets.mkString(",")}"
     )
 
-    private var batchIndex = 0  // Which batch we're in
+    private var batchIndex = 0   // Which batch we're in
     private var fileStream: FileInputStream = null
 
     // An intermediate stream that reads from exactly one batch

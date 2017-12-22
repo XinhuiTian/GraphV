@@ -105,6 +105,14 @@ object PartitionStrategy {
     }
   }
 
+  // added by TXH: partition by the dst ID
+  case object ReverseEdgePartition1D extends PartitionStrategy {
+    override def getPartition(src: VertexId, dst: VertexId, numParts: PartitionID): PartitionID = {
+      val mixingPrime: VertexId = 1125899906842597L
+      (math.abs(dst * mixingPrime) % numParts).toInt
+    }
+  }
+
 
   /**
    * Assigns edges to partitions by hashing the source and destination vertex IDs, resulting in a

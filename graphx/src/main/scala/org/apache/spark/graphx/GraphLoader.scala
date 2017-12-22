@@ -133,8 +133,8 @@ object GraphLoader extends Logging {
 
     logInfo("It took %d ms to load the edges".format(System.currentTimeMillis - startTime))
 
-    GraphImpl.fromEdgePartitions(edgeParts, defaultVertexAttr = 1, edgeStorageLevel = edgeStorageLevel,
-      vertexStorageLevel = vertexStorageLevel)
+    GraphImpl.fromEdgePartitions(edgeParts, defaultVertexAttr = 1,
+      edgeStorageLevel = edgeStorageLevel, vertexStorageLevel = vertexStorageLevel)
   } // end of edgeListFile
 
 }

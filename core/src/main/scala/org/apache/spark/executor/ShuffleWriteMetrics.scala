@@ -32,6 +32,9 @@ class ShuffleWriteMetrics private[spark] () extends Serializable {
   private[executor] val _recordsWritten = new LongAccumulator
   private[executor] val _writeTime = new LongAccumulator
 
+  // add by txh
+  // private[executor] val _aggreTime = new LongAccumulator
+
   /**
    * Number of bytes written for the shuffle by this task.
    */
@@ -47,6 +50,9 @@ class ShuffleWriteMetrics private[spark] () extends Serializable {
    */
   def writeTime: Long = _writeTime.sum
 
+
+  // def aggreTime: Long = _aggreTime.sum
+
   private[spark] def incBytesWritten(v: Long): Unit = _bytesWritten.add(v)
   private[spark] def incRecordsWritten(v: Long): Unit = _recordsWritten.add(v)
   private[spark] def incWriteTime(v: Long): Unit = _writeTime.add(v)
@@ -56,6 +62,9 @@ class ShuffleWriteMetrics private[spark] () extends Serializable {
   private[spark] def decRecordsWritten(v: Long): Unit = {
     _recordsWritten.setValue(recordsWritten - v)
   }
+
+  // txh
+  // private[spark] def incAggreTime(v: Long): Unit = _aggreTime.add(v)
 
   // Legacy methods for backward compatibility.
   // TODO: remove these once we make this class private.

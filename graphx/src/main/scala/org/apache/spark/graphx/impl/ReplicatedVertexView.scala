@@ -64,12 +64,20 @@ class ReplicatedVertexView[VD: ClassTag, ED: ClassTag](
     val shipDst = includeDst && !hasDstId
     println("upgrade: ship Src & Dst: " + shipSrc + " " + shipDst)
     if (shipSrc || shipDst) {
-      println("upgrade")
+      // println("upgrade")
       val shippedVerts: RDD[(Int, VertexAttributeBlock[VD])] =
         vertices.shipVertexAttributes(shipSrc, shipDst)
           .setName("ReplicatedVertexView.upgrade(%s, %s) - shippedVerts %s %s (broadcast)".format(
             includeSrc, includeDst, shipSrc, shipDst))
-          .partitionBy(edges.partitioner.get)
+          .partitionBy(edges.partitioner.get).cache()
+
+      val totalMsgs = shippedVerts.mapPartitions { partIter =>
+        val s = partIter.map(_._2.iterator.length)
+        s
+      }.sum()
+
+      println("Sync Messages: " + totalMsgs)
+
       val newEdges = edges.withPartitionsRDD(edges.partitionsRDD.zipPartitions(shippedVerts) {
         (ePartIter, shippedVertsIter) => ePartIter.map {
           case (pid, edgePartition) =>
@@ -110,16 +118,23 @@ class ReplicatedVertexView[VD: ClassTag, ED: ClassTag](
     val shippedVerts = updates.shipVertexAttributes(hasSrcId, hasDstId)
       .setName("ReplicatedVertexView.updateVertices - shippedVerts %s %s (broadcast)".format(
         hasSrcId, hasDstId))
-      .partitionBy(edges.partitioner.get)
+      .partitionBy(edges.partitioner.get).cache()
 
-    println(s"After shipVertex: hasSrcId $hasSrcId, hasDstId $hasDstId")
+    val totalMsgs = shippedVerts.mapPartitions { partIter =>
+      val s = partIter.map(_._2.iterator.length)
+      s
+    }.sum()
+
+    println("Sync Messages: " + totalMsgs)
+
+    // println(s"After shipVertex: hasSrcId $hasSrcId, hasDstId $hasDstId")
     val newEdges = edges.withPartitionsRDD(edges.partitionsRDD.zipPartitions(shippedVerts) {
       (ePartIter, shippedVertsIter) => ePartIter.map {
         case (pid, edgePartition) =>
           (pid, edgePartition.updateVertices(shippedVertsIter.flatMap(_._2.iterator)))
       }
     })
-    println(s"After edge updateVertices: hasSrcId $hasSrcId, hasDstId $hasDstId")
+    // println(s"After edge updateVertices: hasSrcId $hasSrcId, hasDstId $hasDstId")
     new ReplicatedVertexView(newEdges, hasSrcId, hasDstId)
   }
 }

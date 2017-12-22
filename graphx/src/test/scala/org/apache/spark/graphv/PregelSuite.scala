@@ -1,3 +1,4 @@
+
 package org.apache.spark.graphv
 
 import java.io.{File, FileOutputStream, OutputStreamWriter}
@@ -27,6 +28,10 @@ class PregelSuite extends SparkFunSuite with LocalSparkContext {
       // println(tmpDir.getAbsolutePath)
       val writer = new OutputStreamWriter (new FileOutputStream (graphFile), StandardCharsets.UTF_8)
       for (i <- (1 until 101)) {
+        writer.write (s"0 $i\n")
+      }
+
+      for (i <- 1 until 10) {
         writer.write (s"$i 0\n")
       }
 
@@ -36,7 +41,7 @@ class PregelSuite extends SparkFunSuite with LocalSparkContext {
 
       val myStartTime = System.currentTimeMillis
       val workGraph = MyGraphLoader.edgeListFile(sc, "/Users/XinhuiTian/Downloads/soc-Epinions1.txt", false, 8).cache()
-      // val workGraph = MyGraphLoader.edgeListFile(sc, tmpDir.getAbsolutePath, false, 8).cache()
+      //  val workGraph = MyGraphLoader.edgeListFile(sc, tmpDir.getAbsolutePath, false, 10).cache()
 
       println("outDegrees")
       // workGraph.outDegrees.foreach(println)
@@ -56,9 +61,6 @@ class PregelSuite extends SparkFunSuite with LocalSparkContext {
       }
       */
       println
-
-
-
       // println("edges")
       // workGraph.vertices.partitionsRDD.foreach { vertexPart => vertexPart.edges.foreach(println); println }
       // iniGraph.vertices.foreach(println)
@@ -74,7 +76,8 @@ class PregelSuite extends SparkFunSuite with LocalSparkContext {
 
       def mergeMessage(a: Double, b: Double): Double = a + b
 
-      val resultGraph = MyPregel(iniGraph, initialMessage, activeDirection = EdgeDirection.Out, maxIterations = 10) (vertexProgram, sendMessage, mergeMessage)
+      val resultGraph = MyPregel(iniGraph, initialMessage,
+        activeDirection = EdgeDirection.Out, maxIterations = 10) (vertexProgram, sendMessage, mergeMessage)
       println(resultGraph.vertices.values.sum())
       // resultGraph.vertices.values.foreach(println)
       println("total vertices: " + resultGraph.vertices.map(_._1).count)
@@ -92,7 +95,11 @@ class PregelSuite extends SparkFunSuite with LocalSparkContext {
       // println(tmpDir.getAbsolutePath)
       val writer = new OutputStreamWriter (new FileOutputStream (graphFile), StandardCharsets.UTF_8)
       for (i <- (1 until 101)) {
-        writer.write (s"$i 0\n")
+        writer.write (s"0 $i\n")
+      }
+
+      for (i <- 1 until 101) {
+        writer.write(s"$i 0\n")
       }
 
       writer.close ()
@@ -102,8 +109,8 @@ class PregelSuite extends SparkFunSuite with LocalSparkContext {
         val myStartTime = System.currentTimeMillis
 
         val graph = MyGraphLoader.edgeListFile (sc,
-          "/Users/XinhuiTian/Downloads/soc-Epinions1.txt", false, 8).cache ()
-          // tmpDir.getCanonicalPath, false, 8).cache ()
+           "/Users/XinhuiTian/Downloads/soc-Epinions1.txt", false, 8).cache ()
+           //tmpDir.getCanonicalPath, false, 8).cache ()
 
         graph.vertices.count ()
 
@@ -187,6 +194,49 @@ class PregelSuite extends SparkFunSuite with LocalSparkContext {
 
     }
   }
+
+  test("BFS") {
+    withSpark { sc =>
+      val myStartTime = System.currentTimeMillis
+
+      val graph = MyGraphLoader.edgeListFile (sc,
+        "/Users/XinhuiTian/Downloads/facebook-links.txt", false, 8).cache ()
+      // tmpDir.getCanonicalPath, false, 8).cache ()
+
+      println("Vertices: " + graph.vertices.count)
+      // println("Edges: " + graph.edges.count)
+
+      var g = graph.mapVertices { (vid, attr) =>
+        if (vid == 1L) 0 else Integer.MAX_VALUE
+      }.cache()
+
+      val initialMessage = Integer.MAX_VALUE
+
+      def vertexProgram(id: VertexId, attr: Int, msg: Int): Int = {
+        if (attr == Integer.MAX_VALUE) msg
+        else attr
+      }
+
+      def sendMessage(edge: MyEdgeTriplet[Int, _]): Iterator[(VertexId, Int)] = {
+        // only visited vertices can be touched here?
+
+        if (edge.srcAttr < Int.MaxValue) {
+          Iterator ((edge.dstId, edge.srcAttr + 1))
+        } else {
+          Iterator.empty
+        }
+      }
+
+      def mergeFunc(a: Int, b: Int): Int = Math.min(a, b)
+
+      val results = MyPregel(g, initialMessage, needActive = true)(
+        vertexProgram, sendMessage, mergeFunc)
+      println(results.vertices.map(_._2).sum())
+      println ("My pregel " + (System.currentTimeMillis - myStartTime))
+    }
+  }
+
+
 
 
 

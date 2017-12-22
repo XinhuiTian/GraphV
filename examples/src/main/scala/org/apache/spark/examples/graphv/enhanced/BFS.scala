@@ -1,15 +1,13 @@
 
-package org.apache.spark.examples.graphv
+package org.apache.spark.examples.graphv.enhanced
 
 import scala.collection.mutable
 
+import org.apache.spark.graphv.VertexId
+import org.apache.spark.graphv.enhanced.{GraphLoader, GraphVEdgeTriplet, Pregel}
 import org.apache.spark.{SparkConf, SparkContext}
-import org.apache.spark.graphv._
 
-/**
- * Created by XinhuiTian on 17/5/19.
- */
-object SSSP {
+object BFS {
   def main(args: Array[String]): Unit = {
     if (args.length < 2) {
       System.err.println (
@@ -42,7 +40,7 @@ object SSSP {
     val sc = new SparkContext (conf.setAppName ("GraphLoad(" + fname + ")"))
 
     val myStartTime = System.currentTimeMillis
-    val graph = MyGraphLoader.edgeListFile (sc, args (0), false, numEPart).cache()
+    val graph = GraphLoader.edgeListFile (sc, args (0), false, numEPart).cache()
 
     graph.vertices.count ()
     println ("It took %d ms loadGraph".format (System.currentTimeMillis - myStartTime))
@@ -51,27 +49,35 @@ object SSSP {
 
     // val landmark: Long = 61
 
-    val spGraph = graph.mapVertices { (vid, _) =>
-      if (vid == 61L) 0.0 else Double.PositiveInfinity
+    var g = graph.mapVertices ((vid, attr) => Integer.MAX_VALUE, false).cache ()
+
+    val initialMessage = Integer.MAX_VALUE
+
+    def initialProgram(id: VertexId, attr: Int): Int = {
+      if (id == 61L) 0 else attr
     }
 
-    val initialMessage = Double.PositiveInfinity
+    def vertexProgram(id: VertexId, attr: Int, msg: Int): Int = {
+      if (attr == Integer.MAX_VALUE) msg
+      else attr
+    }
 
-    def vertexProgram(id: VertexId, attr: Double, msg: Double): Double = math.min(attr, msg)
+    def sendMessage(edge: GraphVEdgeTriplet[Int, _]): Iterator[(VertexId, Int)] = {
+      // only visited vertices can be touched here?
 
-    def sendMessage(edge: MyEdgeTriplet[Double, _]): Iterator[(VertexId, Double)] = {
-      if (edge.srcAttr < Double.PositiveInfinity) {
-        Iterator((edge.dstId, edge.srcAttr + 1.0))
+      if (edge.srcAttr < Int.MaxValue) {
+        Iterator ((edge.dstId, edge.srcAttr + 1))
       } else {
         Iterator.empty
       }
     }
 
-    def mergeFunc(a: Double, b: Double): Double = math.min(a, b)
+    def mergeFunc(a: Int, b: Int): Int = Math.min (a, b)
 
-    MyPregel(spGraph, initialMessage,
-      maxIterations = iterations,
-      needActive = true)(vertexProgram, sendMessage, mergeFunc)
+    val results = Pregel (g, initialMessage, needActive = true)(
+      initialProgram, vertexProgram, sendMessage, mergeFunc)
+    println (results.vertices.map (_._2).sum ())
+    println ("My pregel " + (System.currentTimeMillis - myStartTime))
   }
 
 }

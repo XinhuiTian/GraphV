@@ -53,7 +53,9 @@ abstract class AccumulatorV2[IN, OUT] extends Serializable {
     if (this.metadata != null) {
       throw new IllegalStateException("Cannot register an Accumulator twice.")
     }
+    // println("Register+ " + name.get)
     this.metadata = AccumulatorMetadata(AccumulatorContext.newId(), name, countFailedValues)
+    // println("Register+ " + name.get + " " + metadata.id)
     AccumulatorContext.register(this)
     sc.cleaner.foreach(_.registerAccumulatorForCleanup(this))
   }
@@ -62,8 +64,12 @@ abstract class AccumulatorV2[IN, OUT] extends Serializable {
    * Returns true if this accumulator has been registered.  Note that all accumulators must be
    * registered before use, or it will throw exception.
    */
-  final def isRegistered: Boolean =
+  final def isRegistered: Boolean = {
+    // println("metadata is null?" + (metadata != null))
+    // println("metadata id is defined: " + metadata.id + " "
+    // + AccumulatorContext.get(metadata.id).isDefined)
     metadata != null && AccumulatorContext.get(metadata.id).isDefined
+  }
 
   private def assertMetadataNotNull(): Unit = {
     if (metadata == null) {

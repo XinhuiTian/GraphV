@@ -118,7 +118,7 @@ class EdgePartition[
       newVertexAttrs(global2local(kv._1)) = kv._2
     }
     val et = System.currentTimeMillis()
-    println("updateVertex: " + (et - st))
+    // println("updateVertex: " + (et - st))
     new EdgePartition(
       localSrcIds, localDstIds, data, index, global2local, local2global, newVertexAttrs,
       activeSet, localIndex)

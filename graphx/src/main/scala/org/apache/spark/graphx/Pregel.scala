@@ -128,10 +128,12 @@ object Pregel extends Logging {
     // Loop
     var prevG: Graph[VD, ED] = null
     var i = 0
+    var prevMessages = activeMessages
     while (activeMessages > 0 && i < maxIterations) {
       // Receive the messages and update the vertices.
       val startTime = System.currentTimeMillis()
       prevG = g
+      println("Active Push Messages: " + activeMessages)
       g = g.joinVertices(messages)(vprog).cache()
 
       val oldMessages = messages
@@ -144,6 +146,7 @@ object Pregel extends Logging {
       // (depended on by the vertices of g) and the vertices of prevG (depended on by oldMessages
       // and the vertices of g).
       activeMessages = messages.count()
+      prevMessages = activeMessages
       val endTime = System.currentTimeMillis()
 
       // scalastyle:off println

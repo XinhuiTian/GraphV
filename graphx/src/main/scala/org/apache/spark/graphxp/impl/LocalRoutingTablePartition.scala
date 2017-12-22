@@ -1,3 +1,4 @@
+
 package org.apache.spark.graphxp.impl
 
 import org.apache.spark.graphxp._
@@ -84,7 +85,8 @@ object LocalRoutingTablePartition {
 
 private[graphxp]
 class LocalRoutingTablePartition(
-    private val routingTable: Array[(Array[(VertexId, Int)], BitSet, BitSet)]) extends Serializable {
+    private val routingTable: Array[(Array[(VertexId, Int)], BitSet, BitSet)])
+  extends Serializable {
 
   /** The maximum number of edge partitions this `RoutingTablePartition` is built to join with. */
   val numEdgePartitions: Int = routingTable.length

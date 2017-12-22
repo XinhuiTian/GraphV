@@ -1,3 +1,4 @@
+
 package org.apache.spark.graphv
 
 import scala.reflect.ClassTag
@@ -29,13 +30,12 @@ class MyShippableLocalVertexPartition[VD: ClassTag](
 
   // iter1: remote msgs, iter2: local msgs
   def aggregateUsingIndex[VD2: ClassTag](
-    iter1: Iterator[(VertexId, VD2)],
-      iter2: Iterator[(Int, VD2)],
+    iter: Iterator[(VertexId, VD2)],
     reduceFunc: (VD2, VD2) => VD2): MyShippableLocalVertexPartition[VD2] = {
     val newMask = new BitSet (size)
     val newValues = new Array[VD2](size)
     // println("aggregateIndex size: " + size)
-    iter1.foreach { product =>
+    iter.foreach { product =>
       val vid = product._1
       val vdata = product._2
       val pos = global2local.getOrElse (vid, -1)
@@ -53,7 +53,7 @@ class MyShippableLocalVertexPartition[VD: ClassTag](
     // println("In aggregateUsingIndex: ")
     // iter2.foreach(msg => print(msg + " "))
     // println
-
+/*
     iter2.foreach { product =>
       val vid = product._1
       val vdata = product._2
@@ -64,10 +64,13 @@ class MyShippableLocalVertexPartition[VD: ClassTag](
         } else { // otherwise just store the new value
           newMask.set (pos)
           newValues (pos) = vdata
+          println("localMsg: " + pos, vdata)
+          // println(local2global(pos), vdata)
         }
         //        println("debug")
       }
     }
+    */
     new MyShippableLocalVertexPartition(global2local, newValues, newMask)
   }
 }

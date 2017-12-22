@@ -17,10 +17,13 @@
 
 package org.apache.spark.graphx.lib
 
-import org.apache.spark.SparkFunSuite
+import java.io.{File, FileOutputStream, OutputStreamWriter}
+import java.nio.charset.StandardCharsets
 
 import org.apache.spark.graphx._
 import org.apache.spark.graphx.util.GraphGenerators
+import org.apache.spark.util.Utils
+import org.apache.spark.SparkFunSuite
 
 
 object GridPageRank {
@@ -67,17 +70,34 @@ class PageRankSuite extends SparkFunSuite with LocalSparkContext {
   test("Star PageRank") {
     withSpark { sc =>
       val nVertices = 100
+      val tmpDir = Utils.createTempDir ()
+      val graphFile = new File (tmpDir.getAbsolutePath, "graph.txt")
+      // println(tmpDir.getAbsolutePath)
+      val writer = new OutputStreamWriter (new FileOutputStream (graphFile), StandardCharsets.UTF_8)
+      for (i <- (1 until 101)) {
+        writer.write (s"0 $i\n")
+      }
+
+      for (i <- 1 until 10) {
+        writer.write (s"$i 0\n")
+      }
+
+      writer.close ()
+
       val startTime = System.currentTimeMillis()
       // val starGraph = GraphGenerators.starGraph(sc, nVertices).cache()
-      val starGraph = GraphLoader.edgeListFile(sc, "/Users/XinhuiTian/Downloads/soc-Epinions1.txt", numEdgePartitions = 8)
+      val starGraph = GraphLoader.edgeListFile(sc, tmpDir.getAbsolutePath, false, 10).cache()
+      // val starGraph = GraphLoader.edgeListFile(sc, "/Users/XinhuiTian/Downloads/soc-Epinions1.txt", numEdgePartitions = 8)
       val resetProb = 0.15
       val errorTol = 1.0e-5
       println("vertices: " + starGraph.numVertices)
       // starGraph.vertices.foreach(println)
+
+
+
+
+
       /*
-
-
-
       val staticRanks1 = starGraph.staticPageRank(numIter = 10, resetProb).vertices
       val staticRanks2 = starGraph.staticPageRank(numIter = 2, resetProb).vertices.cache()
 
@@ -100,6 +120,8 @@ class PageRankSuite extends SparkFunSuite with LocalSparkContext {
       // val dynamicRanks = starGraph.pageRank(0, resetProb).vertices.cache()
       // assert(compareRanks(staticRanks2, dynamicRanks) < errorTol)
       val ranks = starGraph.staticPageRank(10, resetProb).vertices.cache()
+
+      println(ranks.map(_._2).sum())
       val endTime = System.currentTimeMillis()
       println(s"Total Time: ${endTime - startTime}")
 

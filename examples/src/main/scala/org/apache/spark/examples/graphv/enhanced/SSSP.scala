@@ -1,14 +1,13 @@
 
-package org.apache.spark.examples.graphv
+package org.apache.spark.examples.graphv.enhanced
 
 import scala.collection.mutable
 
+import org.apache.spark.graphv.enhanced._
 import org.apache.spark.{SparkConf, SparkContext}
-import org.apache.spark.graphv._
 
-/**
- * Created by XinhuiTian on 17/5/19.
- */
+import org.apache.spark.graphv.VertexId
+
 object SSSP {
   def main(args: Array[String]): Unit = {
     if (args.length < 2) {
@@ -42,7 +41,7 @@ object SSSP {
     val sc = new SparkContext (conf.setAppName ("GraphLoad(" + fname + ")"))
 
     val myStartTime = System.currentTimeMillis
-    val graph = MyGraphLoader.edgeListFile (sc, args (0), false, numEPart).cache()
+    val graph = GraphLoader.edgeListFile (sc, args (0), false, numEPart).cache()
 
     graph.vertices.count ()
     println ("It took %d ms loadGraph".format (System.currentTimeMillis - myStartTime))
@@ -51,15 +50,17 @@ object SSSP {
 
     // val landmark: Long = 61
 
-    val spGraph = graph.mapVertices { (vid, _) =>
-      if (vid == 61L) 0.0 else Double.PositiveInfinity
-    }
+    val spGraph = graph.mapVertices { (vid, _) => Double.PositiveInfinity }.cache()
 
     val initialMessage = Double.PositiveInfinity
 
+    def initProgram(id: VertexId, attr: Double): Double = {
+      if (id == 61L) 0.0 else Double.PositiveInfinity
+    }
+
     def vertexProgram(id: VertexId, attr: Double, msg: Double): Double = math.min(attr, msg)
 
-    def sendMessage(edge: MyEdgeTriplet[Double, _]): Iterator[(VertexId, Double)] = {
+    def sendMessage(edge: GraphVEdgeTriplet[Double, _]): Iterator[(VertexId, Double)] = {
       if (edge.srcAttr < Double.PositiveInfinity) {
         Iterator((edge.dstId, edge.srcAttr + 1.0))
       } else {
@@ -69,9 +70,12 @@ object SSSP {
 
     def mergeFunc(a: Double, b: Double): Double = math.min(a, b)
 
-    MyPregel(spGraph, initialMessage,
+    val results = Pregel(spGraph, initialMessage,
       maxIterations = iterations,
-      needActive = true)(vertexProgram, sendMessage, mergeFunc)
+      needActive = true)(initProgram, vertexProgram, sendMessage, mergeFunc)
+
+    println (results.vertices.map (_._2).sum ())
+    println ("My pregel " + (System.currentTimeMillis - myStartTime))
   }
 
 }

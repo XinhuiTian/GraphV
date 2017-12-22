@@ -137,7 +137,6 @@ class MyVertexPartition[
     }
     new MyVertexPartition (
       localDstIds, attrs, vertexIds, newData, global2local, local2global, activeSet)
-
   }
 
   def leftJoin[VD2: ClassTag, VD3: ClassTag]
@@ -197,9 +196,15 @@ class MyVertexPartition[
 
     var i = 0
 
+    // other.mask.iterator.foreach(v => println(local2global(v)))
+
     while (i < vertexAttrSize) {
       val otherV: Option[VD2] = if (other.mask.get (i)) Some (other.values (i)) else None
+      if (otherV == None) {
+        // println(local2global(i) + " get a None msg")
+      }
       newValues (i) = f (local2global (i), attrs (i), otherV)
+      // println("new Value: " + local2global(i), newValues(i))
 
       if (needActive == true) {
         if (attrs (i) != newValues (i)) {
@@ -256,19 +261,18 @@ class MyVertexPartition[
 
   // txh added
   def aggregateLocalUsingIndex[VD2: ClassTag](
-      iter1: Iterator[(VertexId, VD2)],
-      iter2: Iterator[(Int, VD2)],
+      iter: Iterator[(VertexId, VD2)],
       reduceFunc: (VD2, VD2) => VD2): MyShippableLocalVertexPartition[VD2] = {
     val ship = new MyShippableLocalVertexPartition (global2local,
       new Array[VD2](vertexAttrSize), new BitSet (vertexAttrSize))
-    ship.aggregateUsingIndex (iter1, iter2, reduceFunc)
+    ship.aggregateUsingIndex (iter, reduceFunc)
   }
 
   def aggregateMessagesEdgeScan[A: ClassTag](
       sendMsg: MyVertexContext[VD, ED, A] => Unit,
       mergeMsg: (A, A) => A,
       tripletFields: TripletFields,
-      activeness: EdgeActiveness): Iterator[AllMsgs[A]] = {
+      activeness: EdgeActiveness): Iterator[(VertexId, A)] = {
     // println("global2local size: " + global2local.size +"  attrs size: " + attrs.length +"  iter size:  "+
     //  vertexIds.size)
     // txh: aggregates on all vertices, can contain masters
@@ -300,10 +304,7 @@ class MyVertexPartition[
       pos = activeSet.nextSetBit (pos + 1)
     }
 
-    val localMsgs = bitset.iterator.filter(_ < vertexAttrSize)
-      .map(localId => (localId, aggregates (localId)))
-
-    val remoteMsgs = bitset.iterator.filter(_ >= vertexAttrSize)
+    bitset.iterator
       .map(localId => (local2global (localId), aggregates (localId)))
 
     // println("Generated Msgs: " + localMsgs.length)
@@ -312,8 +313,7 @@ class MyVertexPartition[
     // localMsgs.foreach{ msg => print(msg + "") }
     // println
 
-    Iterator(AllMsgs(localMsgs, remoteMsgs))
-
+    // Iterator(AllMsgs(localMsgs, remoteMsgs))
     // bitset.iterator.map{localId => (local2global (localId), aggregates (localId))}
   }
 }

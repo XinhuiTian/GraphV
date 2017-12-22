@@ -37,9 +37,9 @@ class VertexRDDImpl[VD] private[graphx] (
   override val partitioner = partitionsRDD.partitioner
 
   override protected def getPreferredLocations(s: Partition): Seq[String] = {
-    println("Get Prefer location in VertexRDDImpl")
+    // println("Get Prefer location in VertexRDDImpl")
     val locs = partitionsRDD.preferredLocations (s)
-    println(locs)
+    // println(locs)
     locs
   }
 

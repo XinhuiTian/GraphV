@@ -46,7 +46,7 @@ object MyPregel extends Logging {
     // var messages = g.mapReduceTriplets (sendMsg, mergeMsg).cache()
     // var activeMessages = messages.count ()
     var activeNums = g.getActiveNums
-    println("activeNums: " + activeNums)
+    println("Vertex activeNums: " + activeNums)
     // Loop
     var prevG: MyGraph[VD, ED] = null
     var i = 0
@@ -59,15 +59,19 @@ object MyPregel extends Logging {
       //      val oldMessages = messages
       // val oldMessages = messages
 
+      println(activeNums)
       var startTime = System.currentTimeMillis()
       val messages = g.mapReduceTriplets (sendMsg, mergeMsg)
-      // messages.count
+      val msgNum = messages.count
+      println("Messages: " + msgNum)
       var endTime = System.currentTimeMillis()
       println("get Message time: " + (endTime - startTime))
 
       startTime = System.currentTimeMillis()
       g = g.joinLocalVertices (messages, needActive)(vprog).cache()
-      // g.vertices.count()
+
+      // g.vertices.foreach(println)
+      g.vertices.count()
       endTime = System.currentTimeMillis()
       println("get new graph time: " + (endTime - startTime))
 

@@ -54,11 +54,12 @@ abstract class MyVertexRDD[VD, ED](
     */
   }
 
-  def apply[VD: ClassTag](vertices: RDD[(VertexId, VD)]) = {
+  def apply[VD: ClassTag](vertices: RDD[(VertexId, VD)]): RDD[(VertexId, VD)] = {
     val vPartitioned: RDD[(VertexId, VD)] = vertices.partitioner match {
       case Some (p) => vertices
       case None => vertices.partitionBy (new HashPartitioner (vertices.partitions.length))
     }
+    vPartitioned
   }
 
   private[graphv] def mapEdgePartitions[VD2: ClassTag, ED2: ClassTag](
@@ -81,7 +82,8 @@ abstract class MyVertexRDD[VD, ED](
   (other: MyVertexMessage[VD2])(f: (VertexId, VD, Option[VD2]) => VD3): MyVertexRDD[VD3, ED]
 
   def localLeftZipJoin[VD2: ClassTag, VD3: ClassTag]
-  (other: MyLocalVertexMessage[VD2], needActive: Boolean)(f: (VertexId, VD, Option[VD2]) => VD3): MyVertexRDD[VD3, ED]
+  (other: MyLocalVertexMessage[VD2], needActive: Boolean)
+    (f: (VertexId, VD, Option[VD2]) => VD3): MyVertexRDD[VD3, ED]
 
   def foreachEdge(f: (VertexId, ED) => Unit): Unit
 
@@ -90,9 +92,11 @@ abstract class MyVertexRDD[VD, ED](
   : MyVertexRDD[VD2, ED]
 
 
-  def withPartitionsRDD[VD2: ClassTag](partitionsRDD: RDD[MyVertexPartition[VD2, ED]]): MyVertexRDD[VD2, ED]
+  def withPartitionsRDD[VD2: ClassTag](partitionsRDD: RDD[MyVertexPartition[VD2, ED]])
+  : MyVertexRDD[VD2, ED]
 
-  def withPartitionsRDD[VD2: ClassTag](partitionsRDD: RDD[MyShippableVertexPartition[VD2]]): MyVertexMessage[VD2]
+  def withPartitionsRDD[VD2: ClassTag](partitionsRDD: RDD[MyShippableVertexPartition[VD2]])
+  : MyVertexMessage[VD2]
 
   def withPartitionsRDD[VD2: ClassTag](partitionsRDD: RDD[MyShippableLocalVertexPartition[VD2]]):
   MyLocalVertexMessage[VD2]
@@ -101,7 +105,7 @@ abstract class MyVertexRDD[VD, ED](
       messages: RDD[(VertexId, VD2)], reduceFunc: (VD2, VD2) => VD2): MyVertexMessage[VD2]
 
   def aggregateLocalUsingIndex[VD2: ClassTag](
-      messages: RDD[AllMsgs[VD2]], reduceFunc: (VD2, VD2) => VD2): MyLocalVertexMessage[VD2]
+      messages: RDD[(VertexId, VD2)], reduceFunc: (VD2, VD2) => VD2): MyLocalVertexMessage[VD2]
 
   def toEdgeRDD: EdgeRDDImpl[ED, VD]
 }

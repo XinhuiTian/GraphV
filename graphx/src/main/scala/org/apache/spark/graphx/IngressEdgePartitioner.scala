@@ -1,3 +1,4 @@
+
 package org.apache.spark.graphx
 
 import scala.annotation.implicitNotFound
@@ -75,6 +76,7 @@ case class IngressHybridVertexCut(
     }
   }
 
+// only consider OutOnly
 case class IngressEdgePartitionBiCut(
     partitions: Int = -1,
     aggDir: AggregateDirection.Value = AggregateDirection.OutOnly)
@@ -86,9 +88,14 @@ case class IngressEdgePartitionBiCut(
     val partNum = if (numPartitions > 0) numPartitions else rdd.partitions.size
     val mixingPrime = 1125899906842597L % partNum
     aggDir match {
+
+      /*
       case AggregateDirection.InOnly => // bidstcut
         // val lookUpTable = rdd.map { e => (e.dstId, (e.srcId, e.attr))}
         // get all the srcIds for each dstId
+        // 1. edges are grouped by dstId
+        // 2. for each partition, compute the partitions for each srcId
+        // gather the result with dstId as the key: (dstId, Array_partition_count)
         val groupE = rdd.map{e => (e.dstId, e.srcId)}.groupByKey
         val countMap = groupE.map{e =>
           val arr = new Array[Long](numPartitions)
@@ -99,13 +106,14 @@ case class IngressEdgePartitionBiCut(
         }
 
         // define a array out of the rdds?
-        var procNumEdges = new Array[Long](numPartitions)
-        val mht = countMap.map{e =>
-          val k = e._1
-          val v = e._2
-          var bestProc: PartitionID = (k % numPartitions).toInt // original partition ID
-        // srcId num in each partition -
-        var bestScore: Double = v.apply (bestProc) - math.sqrt (1.0 * procNumEdges (bestProc))
+        val procNumEdges = new Array[Long](numPartitions)
+        val mht = countMap.map { e =>
+          val k = e._1 // dstId
+          val v = e._2 // partition array
+        // original partition ID
+          var bestProc: PartitionID = (k % numPartitions).toInt
+        // srcId num in each partition - sqrt(total_edges_in_this_partition)
+          var bestScore: Double = v.apply (bestProc) - math.sqrt (1.0 * procNumEdges (bestProc))
           for (i <- 0 to numPartitions - 1) {
             // for each partition, compute the score for this edge
             val score: Double = v.apply (i) - math.sqrt (1.0 * procNumEdges (i))
@@ -114,9 +122,12 @@ case class IngressEdgePartitionBiCut(
               bestScore = score
             }
           }
+          // computing edge number for each partition
+
           for (i <- 0 to numPartitions - 1) {
             procNumEdges (bestProc) += v.apply (i)
           }
+          // (dstId, bestProc)
           (k, bestProc)
         }
 
@@ -126,22 +137,31 @@ case class IngressEdgePartitionBiCut(
         }.partitionBy (new HashPartitioner (numPartitions)).map{
           _._2
         }
-
+        */
 
       case AggregateDirection.OutOnly =>
         // val lookUpTable = rdd.map { e => (e.dstId, (e.srcId, e.attr))}
+        val hashPartitioner = new HashPartitioner(partNum)
         val groupE = rdd.map{e => (e.srcId, e.dstId)}.groupByKey
         val countMap = groupE.map{e =>
           val arr = new Array[Long](numPartitions)
-          e._2.map{v => arr ((v % numPartitions).toInt) += 1}
+          e._2.map{v => arr (hashPartitioner.getPartition(v)) += 1}
           (e._1, arr)
         }
 
         var procNumEdges = new Array[Long](numPartitions)
-        val mht = countMap.map{e =>
+        val mht = countMap.map { e =>
+
+          /**
+           * for each edge
+           * 1. the initial bestProc is the hash-based partition num
+           * 2. the initial bestScore is the neighbor number in each partition
+           * 3. find assigned to which partition, this edge can get the best score
+           * 4. add the edge numbers to the procNumEdges of the best proc
+           */
           val k = e._1
           val v = e._2
-          var bestProc: PartitionID = (k % numPartitions).toInt
+          var bestProc: PartitionID = hashPartitioner.getPartition(k)
           var bestScore: Double = v.apply (bestProc) - math.sqrt (1.0 * procNumEdges (bestProc))
           for (i <- 0 to numPartitions - 1) {
             val score: Double = v.apply (i) - math.sqrt (1.0 * procNumEdges (i))
@@ -157,9 +177,9 @@ case class IngressEdgePartitionBiCut(
         }
 
         val combineRDD = (rdd.map{e => (e.srcId, e)}).join (mht)
-        combineRDD.map{e =>
+        combineRDD.map { e =>
           (e._2._2, e._2._1)
-        }.partitionBy (new HashPartitioner (numPartitions)).map{
+        }.partitionBy (new HashPartitioner (numPartitions)).map {
           _._2
         }
     }
@@ -312,7 +332,8 @@ object IngressEdgePartitioner {
   def fromString(s: String,
       parts: Int,
       threshold: Int = 100,
-      aggDir: AggregateDirection.Value = AggregateDirection.OutOnly): IngressEdgePartitioner = s match {
+      aggDir: AggregateDirection.Value = AggregateDirection.OutOnly):
+  IngressEdgePartitioner = s match {
     case "RandomVertexCut" => new IngressRandomVertexCut(parts)
     case "EdgePartition1D" => new IngressEdgePartition1D(parts)
     case "EdgePartition2D" => new IngressEdgePartition2D(parts)

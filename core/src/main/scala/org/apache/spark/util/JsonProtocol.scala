@@ -358,7 +358,7 @@ private[spark] object JsonProtocol {
     ("Shuffle Write Metrics" -> shuffleWriteMetrics) ~
     ("Input Metrics" -> inputMetrics) ~
     ("Output Metrics" -> outputMetrics) ~
-    ("Updated Blocks" -> updatedBlocks)
+    ("Updated Blocks" -> updatedBlocks) ~ ("Aggregation Time" -> taskMetrics.aggreTime)
   }
 
   def taskEndReasonToJson(taskEndReason: TaskEndReason): JValue = {
@@ -765,6 +765,8 @@ private[spark] object JsonProtocol {
     metrics.setResultSerializationTime((json \ "Result Serialization Time").extract[Long])
     metrics.incMemoryBytesSpilled((json \ "Memory Bytes Spilled").extract[Long])
     metrics.incDiskBytesSpilled((json \ "Disk Bytes Spilled").extract[Long])
+    // txh
+    metrics.incAggreTime((json \ "Aggregation Time").extract[Long])
 
     // Shuffle read metrics
     Utils.jsonOption(json \ "Shuffle Read Metrics").foreach { readJson =>

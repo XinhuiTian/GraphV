@@ -731,6 +731,7 @@ object GraphImpl {
     fromExistingRDDs(vertices, edgesCached)
   }
 
-  def computeGcTime(): Long = ManagementFactory.getGarbageCollectorMXBeans.asScala.map(_.getCollectionTime).sum
+  def computeGcTime(): Long = ManagementFactory
+    .getGarbageCollectorMXBeans.asScala.map(_.getCollectionTime).sum
 
 } // end of object GraphImpl
